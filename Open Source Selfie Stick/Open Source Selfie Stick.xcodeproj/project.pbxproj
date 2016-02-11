@@ -8,8 +8,6 @@
 
 /* Begin PBXBuildFile section */
 		DD6876BE1C6CE476001DB25D /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD6876BD1C6CE476001DB25D /* AppDelegate.swift */; };
-		DD6876C01C6CE476001DB25D /* MasterViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD6876BF1C6CE476001DB25D /* MasterViewController.swift */; };
-		DD6876C21C6CE476001DB25D /* DetailViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD6876C11C6CE476001DB25D /* DetailViewController.swift */; };
 		DD6876C51C6CE476001DB25D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = DD6876C31C6CE476001DB25D /* Main.storyboard */; };
 		DD6876C71C6CE476001DB25D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DD6876C61C6CE476001DB25D /* Assets.xcassets */; };
 		DD6876CA1C6CE476001DB25D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = DD6876C81C6CE476001DB25D /* LaunchScreen.storyboard */; };
@@ -18,8 +16,6 @@
 /* Begin PBXFileReference section */
 		DD6876BA1C6CE476001DB25D /* Open Source Selfie Stick.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Open Source Selfie Stick.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		DD6876BD1C6CE476001DB25D /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		DD6876BF1C6CE476001DB25D /* MasterViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasterViewController.swift; sourceTree = "<group>"; };
-		DD6876C11C6CE476001DB25D /* DetailViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetailViewController.swift; sourceTree = "<group>"; };
 		DD6876C41C6CE476001DB25D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		DD6876C61C6CE476001DB25D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		DD6876C91C6CE476001DB25D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -57,8 +53,6 @@
 			isa = PBXGroup;
 			children = (
 				DD6876BD1C6CE476001DB25D /* AppDelegate.swift */,
-				DD6876BF1C6CE476001DB25D /* MasterViewController.swift */,
-				DD6876C11C6CE476001DB25D /* DetailViewController.swift */,
 				DD6876C31C6CE476001DB25D /* Main.storyboard */,
 				DD6876C61C6CE476001DB25D /* Assets.xcassets */,
 				DD6876C81C6CE476001DB25D /* LaunchScreen.storyboard */,
@@ -139,8 +133,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				DD6876C21C6CE476001DB25D /* DetailViewController.swift in Sources */,
-				DD6876C01C6CE476001DB25D /* MasterViewController.swift in Sources */,
 				DD6876BE1C6CE476001DB25D /* AppDelegate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
