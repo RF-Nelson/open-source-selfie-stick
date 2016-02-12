@@ -13,9 +13,9 @@ This app is currently pending review/release on the App Store. A link will be su
 - [ ] Refactor
 - [ ] Come up with a better name than "Open Source Selfie Stick"
 
-
-*License*
+<br><br>
+*License*<br>
 This software is licensed under the [MPL version 2.0](http://mozilla.org/MPL/2.0/).
 
-*Logo credits:*
+*Logo credits:*<br>
 Video,Person,Smart Phone graphics by <a href="http://www.freepik.com/">Freepik</a> from <a href="http://www.flaticon.com/">Flaticon</a> are licensed under <a href="http://creativecommons.org/licenses/by/3.0/" title="Creative Commons BY 3.0">CC BY 3.0</a>. Made with <a href="http://logomakr.com" title="Logo Maker">Logo Maker</a>
