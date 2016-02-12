@@ -3,7 +3,7 @@
 This app is currently pending review/release on the App Store. A link will be supplied when it is live.
 
 ### TO DO
-- [ ] Give user the option to save photos on either or both devices
+- [x] Give user the option to save photos on either or both devices
 - [ ] Make a more aesthetically pleasing UI
 - [ ] Add an optional timer
 - [ ] Share your newly taken photos on Facebook and Twitter with SocialKit
