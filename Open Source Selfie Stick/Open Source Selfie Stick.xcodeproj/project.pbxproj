@@ -11,6 +11,11 @@
 		DD6876C51C6CE476001DB25D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = DD6876C31C6CE476001DB25D /* Main.storyboard */; };
 		DD6876C71C6CE476001DB25D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = DD6876C61C6CE476001DB25D /* Assets.xcassets */; };
 		DD6876CA1C6CE476001DB25D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = DD6876C81C6CE476001DB25D /* LaunchScreen.storyboard */; };
+		DDA455091C6CF7680036CF38 /* InitialViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDA455081C6CF7680036CF38 /* InitialViewController.swift */; };
+		DDA4550B1C6CFF4A0036CF38 /* CameraServiceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDA4550A1C6CFF4A0036CF38 /* CameraServiceManager.swift */; };
+		DDA4550D1C6D0A8E0036CF38 /* CameraViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDA4550C1C6D0A8E0036CF38 /* CameraViewController.swift */; };
+		DDA455111C6D0C6A0036CF38 /* AVCamPreviewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDA455101C6D0C6A0036CF38 /* AVCamPreviewController.swift */; };
+		DDA455131C6D0D560036CF38 /* CameraControllerViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDA455121C6D0D560036CF38 /* CameraControllerViewController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -20,6 +25,11 @@
 		DD6876C61C6CE476001DB25D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		DD6876C91C6CE476001DB25D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		DD6876CB1C6CE476001DB25D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		DDA455081C6CF7680036CF38 /* InitialViewController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = InitialViewController.swift; sourceTree = "<group>"; };
+		DDA4550A1C6CFF4A0036CF38 /* CameraServiceManager.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CameraServiceManager.swift; sourceTree = "<group>"; };
+		DDA4550C1C6D0A8E0036CF38 /* CameraViewController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CameraViewController.swift; sourceTree = "<group>"; };
+		DDA455101C6D0C6A0036CF38 /* AVCamPreviewController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AVCamPreviewController.swift; sourceTree = "<group>"; };
+		DDA455121C6D0D560036CF38 /* CameraControllerViewController.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = CameraControllerViewController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -53,10 +63,15 @@
 			isa = PBXGroup;
 			children = (
 				DD6876BD1C6CE476001DB25D /* AppDelegate.swift */,
+				DDA455101C6D0C6A0036CF38 /* AVCamPreviewController.swift */,
 				DD6876C31C6CE476001DB25D /* Main.storyboard */,
+				DDA4550A1C6CFF4A0036CF38 /* CameraServiceManager.swift */,
 				DD6876C61C6CE476001DB25D /* Assets.xcassets */,
 				DD6876C81C6CE476001DB25D /* LaunchScreen.storyboard */,
 				DD6876CB1C6CE476001DB25D /* Info.plist */,
+				DDA455081C6CF7680036CF38 /* InitialViewController.swift */,
+				DDA4550C1C6D0A8E0036CF38 /* CameraViewController.swift */,
+				DDA455121C6D0D560036CF38 /* CameraControllerViewController.swift */,
 			);
 			path = "Open Source Selfie Stick";
 			sourceTree = "<group>";
@@ -134,6 +149,11 @@
 			buildActionMask = 2147483647;
 			files = (
 				DD6876BE1C6CE476001DB25D /* AppDelegate.swift in Sources */,
+				DDA4550D1C6D0A8E0036CF38 /* CameraViewController.swift in Sources */,
+				DDA455091C6CF7680036CF38 /* InitialViewController.swift in Sources */,
+				DDA455131C6D0D560036CF38 /* CameraControllerViewController.swift in Sources */,
+				DDA455111C6D0C6A0036CF38 /* AVCamPreviewController.swift in Sources */,
+				DDA4550B1C6CFF4A0036CF38 /* CameraServiceManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -285,6 +305,7 @@
 				DD6876D01C6CE476001DB25D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
