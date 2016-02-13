@@ -12,10 +12,8 @@
 - [ ] Come up with a better name than "Open Source Selfie Stick"
 
 <br><br>
-*License*<br>
-This software is licensed under the [MPL version 2.0](http://mozilla.org/MPL/2.0/).
+__*License*__<br>
+This software is licensed under the [MPL version 2.0](http://mozilla.org/MPL/2.0/).<br>
 
-0/).
-
-*Logo credits*<br>
+__*Logo credits*__<br>
 Logo created with <a href="http://logomakr.com" title="Logo Maker">Logo Maker</a>. The camera, person, and phone icons seens within the logo are from <a href="http://www.freepik.com/">Freepik</a> from <a href="http://www.flaticon.com/">Flaticon</a>. They are licensed under <a href="http://creativecommons.org/licenses/by/3.0/" title="Creative Commons BY 3.0">CC BY 3.0</a>.
