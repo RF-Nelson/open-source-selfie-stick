@@ -425,7 +425,7 @@ Placeholder text to see how this looks with three lines Getting camera setting
                                         </connections>
                                     </button>
                                     <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="P3U-x1-Ajt">
-                                        <rect key="frame" x="540" y="0.0" width="60" height="68"/>
+                                        <rect key="frame" x="540" y="6" width="60" height="68"/>
                                         <constraints>
                                             <constraint firstAttribute="height" constant="68" id="SAc-i4-dDV"/>
                                             <constraint firstAttribute="width" constant="60" id="xhL-it-w4x"/>
@@ -435,16 +435,30 @@ Placeholder text to see how this looks with three lines Getting camera setting
                                             <action selector="flashButtonTapped:" destination="XgF-yT-b8i" eventType="touchUpInside" id="od1-n3-vN9"/>
                                         </connections>
                                     </button>
+                                    <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="24s-gb-whf">
+                                        <rect key="frame" x="274" y="1" width="60" height="54"/>
+                                        <color key="backgroundColor" white="0.0" alpha="0.0" colorSpace="calibratedWhite"/>
+                                        <constraints>
+                                            <constraint firstAttribute="height" constant="54" id="UBl-b8-Xb2"/>
+                                            <constraint firstAttribute="width" constant="60" id="r0T-19-Bph"/>
+                                        </constraints>
+                                        <state key="normal" image="cameraSave"/>
+                                        <connections>
+                                            <action selector="saveButtonTapped:" destination="XgF-yT-b8i" eventType="touchUpInside" id="mRo-pX-uF5"/>
+                                        </connections>
+                                    </button>
                                 </subviews>
                                 <color key="backgroundColor" white="0.0" alpha="1" colorSpace="calibratedWhite"/>
                                 <constraints>
                                     <constraint firstAttribute="trailingMargin" secondItem="6hT-pL-o4s" secondAttribute="trailing" id="3xh-WZ-Myk"/>
+                                    <constraint firstItem="24s-gb-whf" firstAttribute="centerX" secondItem="GlY-gK-29f" secondAttribute="centerX" constant="4" id="6Fu-VK-2eG"/>
                                     <constraint firstItem="9z7-Of-iBX" firstAttribute="leading" secondItem="GlY-gK-29f" secondAttribute="leading" id="GZA-mn-IkD"/>
                                     <constraint firstAttribute="bottomMargin" secondItem="6hT-pL-o4s" secondAttribute="bottom" id="JKL-uQ-dKi"/>
-                                    <constraint firstItem="P3U-x1-Ajt" firstAttribute="top" secondItem="GlY-gK-29f" secondAttribute="top" id="ODp-IE-6ao"/>
+                                    <constraint firstItem="P3U-x1-Ajt" firstAttribute="top" secondItem="GlY-gK-29f" secondAttribute="top" constant="6" id="ODp-IE-6ao"/>
                                     <constraint firstItem="6hT-pL-o4s" firstAttribute="leading" secondItem="GlY-gK-29f" secondAttribute="leadingMargin" id="aKD-T2-wZ3"/>
                                     <constraint firstItem="9z7-Of-iBX" firstAttribute="top" secondItem="GlY-gK-29f" secondAttribute="top" id="mug-BL-0t9"/>
                                     <constraint firstAttribute="trailing" secondItem="P3U-x1-Ajt" secondAttribute="trailing" id="tXq-X9-gd5"/>
+                                    <constraint firstItem="24s-gb-whf" firstAttribute="top" secondItem="GlY-gK-29f" secondAttribute="top" constant="1" id="xff-eG-aam"/>
                                 </constraints>
                                 <connections>
                                     <outletCollection property="gestureRecognizers" destination="mvQ-1K-pia" appends="YES" id="FfP-od-ncf"/>
@@ -613,6 +627,7 @@ Placeholder text to see how this looks with three lines Getting camera setting
         </scene>
     </scenes>
     <resources>
+        <image name="cameraSave" width="256" height="256"/>
         <image name="flash" width="256" height="256"/>
         <image name="gearIcon" width="128" height="128"/>
         <image name="logo" width="596" height="178"/>

@@ -217,17 +217,7 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
         
         self.focusWithMode(AVCaptureFocusMode.AutoFocus, exposureMode: AVCaptureExposureMode.AutoExpose, point: CGPoint(x: 0.5, y: 0.5), monitorSubjectAreaChange: true)
         
-        let saveAlert = UIAlertController(title: "Save photos", message: "Do you want to save photos from this session to this device?", preferredStyle: UIAlertControllerStyle.Alert)
-        
-        saveAlert.addAction(UIAlertAction(title: "Yes", style: .Default, handler: { (action: UIAlertAction!) in
-            self.savePhoto = true
-        }))
-        
-        saveAlert.addAction(UIAlertAction(title: "No", style: .Default, handler: { (action: UIAlertAction!) in
-            self.savePhoto = false
-        }))
-        
-        presentViewController(saveAlert, animated: true, completion: nil)
+        promptToSavePhotos()
     }
     
     override func viewWillDisappear(animated: Bool) {
@@ -253,6 +243,20 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
     
     override func prefersStatusBarHidden() -> Bool {
         return true
+    }
+    
+    func promptToSavePhotos() {
+        let saveAlert = UIAlertController(title: "Save photos", message: "Do you want to save photos from this session to this device?", preferredStyle: UIAlertControllerStyle.Alert)
+        
+        saveAlert.addAction(UIAlertAction(title: "Yes", style: .Default, handler: { (action: UIAlertAction!) in
+            self.savePhoto = true
+        }))
+        
+        saveAlert.addAction(UIAlertAction(title: "No", style: .Default, handler: { (action: UIAlertAction!) in
+            self.savePhoto = false
+        }))
+        
+        presentViewController(saveAlert, animated: true, completion: nil)
     }
     
     override func willRotateToInterfaceOrientation(toInterfaceOrientation: UIInterfaceOrientation, duration: NSTimeInterval) {
@@ -579,6 +583,9 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
         self.focusWithMode(AVCaptureFocusMode.AutoFocus, exposureMode: AVCaptureExposureMode.AutoExpose, point: CGPoint(x: 0.5, y: 0.5), monitorSubjectAreaChange: true)
     }
     
+    @IBAction func saveButtonTapped(sender: AnyObject) {
+        promptToSavePhotos()
+    }
     
 }
 
