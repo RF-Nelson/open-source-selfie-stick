@@ -26,10 +26,10 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
     var session: AVCaptureSession?
     var videoDeviceInput: AVCaptureDeviceInput?
     var photoFileOutput : AVCaptureStillImageOutput?
-    var recordingTime: NSTimeInterval?
     var recordingDateTimer: NSTimer?
     var cameraService = CameraServiceManager()
     var savePhoto : Bool?
+    var sendPhoto : Bool?
     var lastImage : UIImage?
     
     var iso : Float = 300.0
@@ -38,9 +38,12 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
     
     var maxColor : Float = 4.0
     
-    var red : Float = 1.0
-    var green : Float = 1.0
-    var blue : Float = 1.0
+    var red : Float?
+    var green : Float?
+    var blue : Float?
+    var redDefault : Float = 0.0
+    var greenDefault : Float = 0.0
+    var blueDefault : Float = 0.0
     
     var focusAndExposurePoint : CGPoint?
     
@@ -69,12 +72,12 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
     @IBOutlet weak var greenTextField: UITextField!
     @IBOutlet weak var blueTextField: UITextField!
     @IBOutlet weak var flashButton: UIButton!
+    @IBOutlet weak var RGBinfo: UILabel!
     
     override func viewDidLoad() {
         super.viewDidLoad()
         
         self.advancedControlsView.hidden = true
-        
         isoTextField.keyboardType = .DecimalPad
         redTextField.keyboardType = .DecimalPad
         greenTextField.keyboardType = .DecimalPad
@@ -154,6 +157,7 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
                 alert.addAction(UIAlertAction(title: "OK", style: .Default, handler: nil))
                 self.presentViewController(alert, animated: true, completion: nil)
             }
+            
             if session.canAddInput(audioDeviceInput){
                 session.addInput(audioDeviceInput)
             }
@@ -164,7 +168,6 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
                 self.photoFileOutput = tempPhotoFileOutput
             }
         })
-        
         
         let devices = AVCaptureDevice.devices()
         
@@ -210,10 +213,9 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
     }
     
     override func viewDidAppear(animated: Bool) {
-        self.redLabel.text = String(self.red)
-        self.greenLabel.text = String(self.green)
-        self.blueLabel.text = String(self.blue)
-//        self.focusWithMode(AVCaptureFocusMode.AutoFocus, exposureMode: AVCaptureExposureMode.AutoExpose, point: CGPoint(x: 0.5, y: 0.5), monitorSubjectAreaChange: true)
+        super.viewDidAppear(animated)
+        
+        self.focusWithMode(AVCaptureFocusMode.AutoFocus, exposureMode: AVCaptureExposureMode.AutoExpose, point: CGPoint(x: 0.5, y: 0.5), monitorSubjectAreaChange: true)
         
         let saveAlert = UIAlertController(title: "Save photos", message: "Do you want to save photos from this session to this device?", preferredStyle: UIAlertControllerStyle.Alert)
         
@@ -276,8 +278,7 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
                     self.lastImage = UIImage(data: imageData)!
                     let outputFilePath = NSURL(fileURLWithPath: NSTemporaryDirectory()).URLByAppendingPathComponent("photo.jpg")
                     UIImageJPEGRepresentation(self.lastImage!, 100)?.writeToURL(outputFilePath, atomically: true)
-                    self.cameraService.transferVideoFile(outputFilePath)
-                    
+                    self.cameraService.transferFile(outputFilePath)
                     
                     if (self.savePhoto!) {
                         ALAssetsLibrary().writeImageToSavedPhotosAlbum(self.lastImage!.CGImage, orientation: ALAssetOrientation(rawValue: self.lastImage!.imageOrientation.rawValue)!, completionBlock: nil)
@@ -297,7 +298,7 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
             print(error)
         }
         
-        self.cameraService.transferVideoFile(outputFileURL)
+        self.cameraService.transferFile(outputFileURL)
     }
     
     func subjectAreaDidChange(notification: NSNotification){
@@ -307,54 +308,55 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
         dispatch_async(self.sessionQueue, {
             let device: AVCaptureDevice! = self.videoDeviceInput!.device
             
-//            var bestFormat : AVCaptureDeviceFormat?
-            
-//            var bestFrameRateRange : AVFrameRateRange?
-//            
-//            for format in device.formats as! [AVCaptureDeviceFormat] {
-//                for range in format.videoSupportedFrameRateRanges as! [AVFrameRateRange] {
-//                    if bestFrameRateRange == nil {
-//                        bestFrameRateRange = range
-//                    }
-//                    
-//                    if range.maxFrameRate == 120.0 as Float64 {
-//                        bestFormat = format
-//                        bestFrameRateRange = range
-//                    }
-//                }
-//            }
-            
             do {
                 try device.lockForConfiguration()
-                
-//                device.activeFormat = bestFormat
-//                device.activeVideoMinFrameDuration = bestFrameRateRange!.minFrameDuration
-//                device.activeVideoMaxFrameDuration = bestFrameRateRange!.minFrameDuration
                 
                 if device.focusPointOfInterestSupported && device.isFocusModeSupported(focusMode){
                     device.focusMode = focusMode
                     device.focusPointOfInterest = point
                 }
+                
                 if device.exposurePointOfInterestSupported && device.isExposureModeSupported(exposureMode){
                     //                    device.exposurePointOfInterest = point
                     //                    device.exposureMode = exposureMode
-                    self.minIso = device.activeFormat.minISO
-                    self.maxIso = device.activeFormat.maxISO
-                    print(self.iso)
+                    
+                    if (self.minIso == nil) {
+                        self.minIso = device.activeFormat.minISO
+                        self.maxIso = device.activeFormat.maxISO
+                        self.maxColor = device.maxWhiteBalanceGain
+                        let focusString = "Tap screen to focus on that point. Click lock to lock the focus."
+                        let ISOstring = "\nThe ISO value must be between " + self.minIso!.description + " and " + self.maxIso!.description
+                        let RGBstring = "\nAll three RGB values must be between 1.0 and " + self.maxColor.description
+                        self.RGBinfo.text = focusString + ISOstring + RGBstring
+                    }
+                    
                     device.setExposureModeCustomWithDuration(AVCaptureExposureDurationCurrent, ISO: self.iso, completionHandler: nil)
                 }
+                
                 if device.hasFlash && device.isFlashModeSupported(AVCaptureFlashMode.Off) {
                     device.flashMode = AVCaptureFlashMode.Off
                 }
                 
-                self.maxColor = device.maxWhiteBalanceGain
-                let gains = AVCaptureWhiteBalanceGains(redGain: self.red, greenGain: self.green, blueGain: self.blue)
+                if (self.green == nil) {
+                    self.red = self.redDefault
+                    self.green = self.greenDefault
+                    self.blue = self.blueDefault
+                    self.redLabel.text = self.red?.description
+                    self.greenLabel.text = self.green?.description
+                    self.blueLabel.text = self.blue?.description
+                }
+                
+                // THIS CODE SETS CUSTOM RGB WHITE BALANCE VALUES
+                let gains = AVCaptureWhiteBalanceGains(redGain: self.red!, greenGain: self.green!, blueGain: self.blue!)
                 
                 if (gains.redGain >= 1.0 && gains.redGain <= self.maxColor &&
                     gains.greenGain >= 1.0 && gains.greenGain <= self.maxColor &&
                     gains.blueGain >= 1.0 && gains.blueGain <= self.maxColor) {
                         device.setWhiteBalanceModeLockedWithDeviceWhiteBalanceGains(gains, completionHandler: nil)
+                } else {
+                    device.whiteBalanceMode = .ContinuousAutoWhiteBalance
                 }
+                
                 device.subjectAreaChangeMonitoringEnabled = monitorSubjectAreaChange
                 device.unlockForConfiguration()
                 
@@ -395,7 +397,6 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
     }
     
     class func setFlashMode(flashMode: AVCaptureFlashMode, device: AVCaptureDevice){
-        
         if device.hasFlash && device.isFlashModeSupported(flashMode) {
             var error: NSError? = nil
             do {
@@ -408,11 +409,9 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
                 print(error)
             }
         }
-        
     }
     
     class func deviceWithMediaType(mediaType: String, preferringPosition:AVCaptureDevicePosition)->AVCaptureDevice{
-        
         var devices = AVCaptureDevice.devicesWithMediaType(mediaType);
         var captureDevice: AVCaptureDevice = devices[0] as! AVCaptureDevice;
         
@@ -424,21 +423,6 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
         }
         
         return captureDevice
-    }
-    
-    func startTimer() {
-        self.recordingDateTimer = NSTimer.scheduledTimerWithTimeInterval(0.3, target: self, selector: "checkDate", userInfo: nil, repeats: true)
-        self.recordingDateTimer?.fire()
-    }
-    
-    func checkDate() {
-        let currentTime = NSDate().timeIntervalSince1970
-        
-        if currentTime - self.recordingTime! > -0.2 {
-            self.recordingTime = nil
-            self.takePhoto()
-            self.recordingDateTimer?.invalidate()
-        }
     }
     
     @IBAction func pressLock(sender: AnyObject) {
@@ -474,7 +458,7 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
                 self.iso = selectedIso!
             }
             
-            self.isoLabel.text = String(self.iso)
+            self.isoLabel.text = self.iso.description
         }
         self.isoTextField.endEditing(true)
     }
@@ -493,9 +477,10 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
                 self.red = selectedRed!
             }
             
-            self.redLabel.text = String(self.red)
+            self.redLabel.text = self.red?.description
         }
     }
+    
     @IBAction func greenTextFieldEditingDidEnd(sender: AnyObject) {
         let selectedGreen = Float(self.greenTextField.text!)
         self.greenTextField.text = ""
@@ -510,9 +495,10 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
                 self.green = selectedGreen!
             }
             
-            self.greenLabel.text = String(self.green)
+            self.greenLabel.text = self.green?.description
         }
     }
+    
     @IBAction func blueTextFieldEditingDidEnd(sender: AnyObject) {
         let selectedBlue = Float(self.blueTextField.text!)
         self.blueTextField.text = ""
@@ -527,7 +513,7 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
                 self.blue = selectedBlue!
             }
             
-            self.blueLabel.text = String(self.blue)
+            self.blueLabel.text = self.blue?.description
         }
     }
     
@@ -551,6 +537,10 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
     }
     
     @IBAction func flashButtonTapped(sender: AnyObject) {
+        self.toggleFlash()
+    }
+    
+    func toggleFlash() {
         if (self.videoDeviceInput!.device.flashAvailable) {
             let device = self.videoDeviceInput!.device
             if (self.videoDeviceInput!.device.flashMode == AVCaptureFlashMode.Off) {
@@ -577,19 +567,37 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
         }
     }
     
+    @IBAction func resetRGB(sender: AnyObject) {
+        self.red = redDefault
+        self.green = greenDefault
+        self.blue = blueDefault
+        self.iso = 300
+        self.isoLabel.text = "300"
+        self.redLabel.text = self.red?.description
+        self.greenLabel.text = self.green?.description
+        self.blueLabel.text = self.blue?.description
+        self.focusWithMode(AVCaptureFocusMode.AutoFocus, exposureMode: AVCaptureExposureMode.AutoExpose, point: CGPoint(x: 0.5, y: 0.5), monitorSubjectAreaChange: true)
+    }
+    
+    
 }
 
 extension CameraViewController : CameraServiceManagerDelegate {
     func connectedDevicesChanged(manager: CameraServiceManager, state: MCSessionState, connectedDevices: [String]) {
-        NSOperationQueue.mainQueue().addOperationWithBlock({
-            print(connectedDevices)
+        // TO DO: ADD SOME KIND OF AUTHENTICATION
+        // FOR NOW, IT AUTOMATICALLY CONNECTS
+    }
+    
+    func shutterButtonTapped(manager: CameraServiceManager, _ sendPhoto: Bool) {
+        self.sendPhoto = sendPhoto
+        dispatch_async(dispatch_get_main_queue(), {
+            self.takePhoto()
         })
     }
     
-    func shutterButtonTapped(manager: CameraServiceManager, timeToRecordString: String) {
-        self.recordingTime = Double(timeToRecordString)
+    func toggleFlash(manager: CameraServiceManager) {
         dispatch_async(dispatch_get_main_queue(), {
-            self.takePhoto()
+            self.toggleFlash()
         })
     }
     

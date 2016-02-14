@@ -56,26 +56,37 @@ class CameraServiceManager : NSObject {
         self.serviceBrowser.stopBrowsingForPeers()
     }
     
-    func startRecording(timeToRecord: Double) {
-        NSLog("%@", "startRecording")
-        
-        print(session.connectedPeers)
+    func takePhoto(sendPhoto: Bool) {
         do {
-            print("more than 0 peers sending data")
-            try self.session.sendData((String(timeToRecord).dataUsingEncoding(NSUTF8StringEncoding))!, toPeers: self.session.connectedPeers, withMode: MCSessionSendDataMode.Reliable)
-            
+            var boolString = ""
+            if (sendPhoto) {
+                boolString = "true"
+            } else {
+                boolString = "false"
+            }
+            // ATTEMPT TO SEND DATA TO CAMERA
+            try self.session.sendData((boolString.dataUsingEncoding(NSUTF8StringEncoding))!, toPeers: self.session.connectedPeers, withMode: MCSessionSendDataMode.Reliable)
         }
         catch {
-            print("something went wrong in startRecording")
+            print("SOMETHING WENT WRONG IN CameraServiceManager.takePhoto()")
         }
     }
     
-    func transferVideoFile(file: NSURL) {
-        print("transfer video file")
-        
+    func toggleFlash() {
+        do {
+            let dataString = "toggleFlash"
+            // ATTEMPT TO SEND DATA TO CAMERA
+            try self.session.sendData((dataString.dataUsingEncoding(NSUTF8StringEncoding))!, toPeers: self.session.connectedPeers, withMode: MCSessionSendDataMode.Reliable)
+        }
+        catch {
+            print("SOMETHING WENT WRONG IN CameraServiceManager.toggleFlash()")
+        }
+    }
+    
+    func transferFile(file: NSURL) {
         if session.connectedPeers.count > 0 {
             for id in session.connectedPeers {
-                print("TRYING TO SEND OVER THIS FILE: " + file.absoluteString)
+//                print("TRYING TO SEND OVER THIS FILE: " + file.absoluteString)
                 self.session.sendResourceAtURL(file, withName: "photo.jpg", toPeer: id, withCompletionHandler: nil)
             }
         }
@@ -124,7 +135,6 @@ extension MCSessionState {
 extension CameraServiceManager : MCSessionDelegate {
     
     func session(session: MCSession, didFinishReceivingResourceWithName resourceName: String, fromPeer peerID: MCPeerID, atURL localURL: NSURL, withError error: NSError?) {
-        print("DID FINISH RECEIVING RESOURCE WITH NAME")
         let documentsPath = NSSearchPathForDirectoriesInDomains(.DocumentDirectory, .UserDomainMask, true)[0]
         let photoDestinationURL = NSURL.fileURLWithPath(documentsPath + "/photo.jpg")
 //        let videoDestinationURL = NSURL.fileURLWithPath(documentsPath + "/movie.mov")
@@ -137,14 +147,28 @@ extension CameraServiceManager : MCSessionDelegate {
             self.delegate?.didFinishReceivingData(self, url: photoDestinationURL)
         }
         catch {
-            print("cannot get file handle")
+            print("PROBLEM IN CameraServiceManager extension > didFinishReceivingResourceWithName")
         }
     }
     
     func session(session: MCSession, didReceiveData data: NSData, fromPeer peerID: MCPeerID) {
         NSLog("%@", "didReceiveData: \(data)")
-        let timeToRecordString = NSString(data: data, encoding: NSUTF8StringEncoding)
-        self.delegate?.shutterButtonTapped(self, timeToRecordString: timeToRecordString as! String)
+        let dataString = NSString(data: data, encoding: NSUTF8StringEncoding)
+        
+        // CHECK DATA STRING AND ACT ACCORDINGLY
+        if (dataString == "toggleFlash") {
+            self.delegate?.toggleFlash(self)
+        } else {
+            // CREATE VARIABLE REPRESENTING WHETHER OR NOT TO SEND PHOTO BACK TO CONTROLLER
+            let sendPhoto : Bool?
+            if (dataString == "true") {
+                sendPhoto = true
+            } else {
+                sendPhoto = false
+            }
+            
+            self.delegate?.shutterButtonTapped(self, sendPhoto!)
+        }
     }
     
     func session(session: MCSession, didReceiveStream stream: NSInputStream, withName streamName: String, fromPeer peerID: MCPeerID) {
@@ -161,9 +185,11 @@ extension CameraServiceManager : MCSessionDelegate {
     }
 }
 
+// PROBABLY SHOULD MAKE THIS AN @objc PROTOCOL AND MAKE SOME OF THESE FUNCTIONS OPTIONAL
 protocol CameraServiceManagerDelegate {
     func connectedDevicesChanged(manager: CameraServiceManager, state: MCSessionState, connectedDevices: [String])
-    func shutterButtonTapped(manager: CameraServiceManager, timeToRecordString: String)
+    func shutterButtonTapped(manager: CameraServiceManager, _ sendPhoto: Bool)
+    func toggleFlash(manager: CameraServiceManager)
     func didStartReceivingData(manager: CameraServiceManager, withName resourceName: String, withProgress progress: NSProgress)
     func didFinishReceivingData(manager: CameraServiceManager, url: NSURL)
 }

@@ -23,17 +23,21 @@ class CameraControllerViewController : UIViewController {
     var timeDelay : Int?
     
     @IBOutlet weak var takePhoto: UIButton!
+    @IBOutlet weak var timerLabel: UILabel!
+    @IBOutlet weak var timerTextField: UITextField!
+    @IBOutlet weak var timerHelpLabel: UILabel!
+    @IBOutlet weak var flashButton: UIButton!
     
     override func viewDidLoad() {
         super.viewDidLoad()
         
         self.cameraService.delegate = self
-        
         disableButton()
-        
-        savePhoto = true
-        
         timeDelay = 0
+        timerLabel.hidden = true
+        timerTextField.hidden = true
+        timerTextField.keyboardType = .NumberPad
+        timerHelpLabel.hidden = true
     }
     
     override func viewWillAppear(animated: Bool) {
@@ -49,7 +53,11 @@ class CameraControllerViewController : UIViewController {
             enableButton()
         }
         
-        let saveAlert = UIAlertController(title: "Save photos", message: "Do you want to save photos from this session to this device?", preferredStyle: UIAlertControllerStyle.Alert)
+        promptToSavePhotos()
+    }
+    
+    func promptToSavePhotos() {
+        let saveAlert = UIAlertController(title: "Save photos to this device?", message: "Do you want to save photos from this session to this device? (If connected via Bluetooth, you should say no)", preferredStyle: UIAlertControllerStyle.Alert)
         
         saveAlert.addAction(UIAlertAction(title: "Yes", style: .Default, handler: { (action: UIAlertAction!) in
             self.savePhoto = true
@@ -63,15 +71,80 @@ class CameraControllerViewController : UIViewController {
     }
     
     @IBAction func takePhotoTapped(sender: AnyObject) {
-        cameraService.startRecording(NSDate().timeIntervalSince1970 + Double(timeDelay!))
+        countdownToPhoto()
+    }
+    
+    func countdownToPhoto() {
+        if (timeDelay != 0) {
+            takePhoto.hidden = true
+            timerLabel.hidden = false
+            timerLabel.text = timeDelay?.description
+            timeDelay!--
+            NSTimer.scheduledTimerWithTimeInterval(1, target: self, selector: "countdownToPhoto", userInfo: nil, repeats: false)
+        } else {
+            tellCameraToTakePhoto()
+            takePhoto.hidden = false
+            timerLabel.hidden = true
+        }
+    }
+    
+    func tellCameraToTakePhoto() {
+        // SEND MESSAGE TO CAMERA TAKE PHOTO, ALONG WITH A BOOLEAN REPRESENTING
+        // WHETHER THE CAMERA SHOULD ATTEMPT SENDING THE PHOTO BACK TO THE CONTROLLER
+        cameraService.takePhoto(self.savePhoto!)
     }
     
     func enableButton() {
         takePhoto.enabled = true
+        takePhoto.backgroundColor = UIColor.darkGrayColor()
+        flashButton.hidden = false
     }
     
     func disableButton() {
         takePhoto.enabled = false
+        takePhoto.backgroundColor = UIColor.lightGrayColor()
+        flashButton.hidden = true
+    }
+    
+    @IBAction func savePhotoButton(sender: AnyObject) {
+        promptToSavePhotos()
+    }
+    
+    @IBAction func timerButton(sender: AnyObject) {
+        timerHelpLabel.hidden = !timerHelpLabel.hidden
+        timerTextField.hidden = !timerTextField.hidden
+        
+        if (timerTextField.hidden) {
+            timeDelay = 0
+        }
+    }
+    
+    
+    @IBAction func flashButtonTapped(sender: AnyObject) {
+        flashButton.selected = !flashButton.selected
+        cameraService.toggleFlash()
+    }
+    
+    override func prefersStatusBarHidden() -> Bool {
+        return true
+    }
+    
+    // HIDE NUMPAD WHEN IT LOSES FOCUS AND SAVE TIMER VALUE
+    override func touchesBegan(touches: Set<UITouch>, withEvent event: UIEvent?) {
+        if (!timerTextField.hidden) {
+            self.view.endEditing(true)
+            timeDelay = Int(timerTextField.text!)
+        }
+        super.touchesBegan(touches, withEvent: event)
+    }
+    
+    //TO DO: Add orientation-independent UI (the following code forces portrait mode)
+    override func shouldAutorotate() -> Bool {
+        return false
+    }
+    
+    override func supportedInterfaceOrientations() -> UIInterfaceOrientationMask {
+        return UIInterfaceOrientationMask.Portrait
     }
     
 }
@@ -86,24 +159,25 @@ extension CameraControllerViewController : CameraServiceManagerDelegate {
                 break
             case .NotConnected:
                 self.disableButton()
-            default:
-                print("something went wrong")
             }
         })
     }
     
-    func shutterButtonTapped(manager: CameraServiceManager, timeToRecordString: String) {
+    func shutterButtonTapped(manager: CameraServiceManager, _ sendPhoto: Bool) {
+        // DO NOTHING (This is where the Camera receives the command to take a photo)
+    }
+    
+    func toggleFlash(manager: CameraServiceManager) {
+        // DO NOTHING (This is where the Camera receives the command to turn the flash on/off)
     }
     
     func didStartReceivingData(manager: CameraServiceManager, withName resourceName: String, withProgress progress: NSProgress) {
-        NSOperationQueue.mainQueue().addOperationWithBlock({
-        })
     }
     
     func didFinishReceivingData(manager: CameraServiceManager, url: NSURL) {
         NSOperationQueue.mainQueue().addOperationWithBlock({
-            self.localURL = url
             if (self.savePhoto!) {
+                // SAVE PHOTO TO PHOTOS APP
                 let data = NSData(contentsOfFile: url.absoluteString)
                 ALAssetsLibrary().writeImageDataToSavedPhotosAlbum(data, metadata: nil, completionBlock: nil)
             }

@@ -2,11 +2,11 @@
 
 ### TO DO
 - [x] Give user the option to save photos on either or both devices
+- [x] Add an optional timer
 - [ ] Add file transfer status bar if remote control device is receiving a file
 - [ ] Viewable gallery of photos from current/most recent session
 - [ ] Detect Bluetooth connection and compress photo if being sent back to remote control device
 - [ ] Make a more aesthetically pleasing UI
-- [ ] Add an optional timer
 - [ ] Share your newly taken photos on Facebook and Twitter with SocialKit
 - [ ] Allow the recording and sharing of video clips
 - [ ] Allow the device acting as the remote control to receive a live video feed
@@ -20,3 +20,6 @@ This software is licensed under the [MPL version 2.0](http://mozilla.org/MPL/2.0
 
 __*Logo credits*__<br>
 Logo created with <a href="http://logomakr.com" title="Logo Maker">Logo Maker</a>. The camera, person, and phone icons seens within the logo are from <a href="http://www.freepik.com/">Freepik</a> from <a href="http://www.flaticon.com/">Flaticon</a>. They are licensed under <a href="http://creativecommons.org/licenses/by/3.0/" title="Creative Commons BY 3.0">CC BY 3.0</a>.
+
+__*Special Thanks*__<br>
+Thanks to [Joystick Interactive](https://github.com/joystickinteractive/), [Alex Konrad](https://github.com/alexkonrad), [Ralf Ebert](https://www.ralfebert.de/tutorials/ios-swift-multipeer-connectivity/), and [Ray Wenderlich](http://www.raywenderlich.com/). Without them, this project may never have happened.
