@@ -288,7 +288,7 @@
                                                     <constraint firstAttribute="height" constant="60" id="mUf-HZ-J4P"/>
                                                 </constraints>
                                                 <string key="text">Tap screen to focus on that point. Click lock to lock the focus.
-dfdfdf Getting camera settings...</string>
+Placeholder text to see how this looks with three lines Getting camera settings...</string>
                                                 <fontDescription key="fontDescription" name="GillSans" family="Gill Sans" pointSize="14"/>
                                                 <color key="textColor" red="1" green="1" blue="1" alpha="1" colorSpace="custom" customColorSpace="calibratedRGB"/>
                                                 <nil key="highlightedColor"/>

@@ -14,11 +14,7 @@ import MultipeerConnectivity
 
 class InitialViewController : UIViewController {
     
-    //TO DO: Add orientation-independent UI (the following code forces portrait mode)
-    override func shouldAutorotate() -> Bool {
-        return false
-    }
-    
+    //TO DO: Add orientation-independent UI (the following code forces portrait mode)    
     override func supportedInterfaceOrientations() -> UIInterfaceOrientationMask {
         return UIInterfaceOrientationMask.Portrait
     }
