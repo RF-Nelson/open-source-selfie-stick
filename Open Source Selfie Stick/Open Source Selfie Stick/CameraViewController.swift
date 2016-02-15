@@ -121,8 +121,7 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
                 session.addInput(videoDeviceInput)
                 self.videoDeviceInput = videoDeviceInput
                 dispatch_async(dispatch_get_main_queue(), {
-                    // Why are we dispatching this to the main queue?
-                    // Because AVCaptureVideoPreviewLayer is the backing layer for AVCamPreviewView and UIView can only be manipulated on main thread.
+                    // AVCaptureVideoPreviewLayer is the backing layer for AVCamPreviewView, and UIViews must be manipulated on main thread.
                     // Note: As an exception to the above rule, it is not necessary to serialize video orientation changes on the AVCaptureVideoPreviewLayer’s connection with other session manipulation.
                     let statusBarOrientation : UIInterfaceOrientation = UIApplication.sharedApplication().statusBarOrientation
                     var initialVideoOrientation : AVCaptureVideoOrientation = AVCaptureVideoOrientation.LandscapeLeft
@@ -236,11 +235,6 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
         })
     }
     
-    override func didReceiveMemoryWarning() {
-        super.didReceiveMemoryWarning()
-        // Dispose of any resources that can be recreated.
-    }
-    
     override func prefersStatusBarHidden() -> Bool {
         return true
     }
@@ -279,14 +273,33 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
                 self.photoFileOutput!.captureStillImageAsynchronouslyFromConnection(videoConnection) {
                     (imageDataSampleBuffer, error) -> Void in
                     let imageData = AVCaptureStillImageOutput.jpegStillImageNSDataRepresentation(imageDataSampleBuffer)
-                    self.lastImage = UIImage(data: imageData)!
+                    let cgImage = UIImage(data: imageData)?.CGImage
                     
+                    // GRAB AN Int REPRESENTING THE CURRENT ORIENTATION OF THE iOS UI
+                    let orientation = UIApplication.sharedApplication().statusBarOrientation.rawValue
+                    
+                    var newImageOrientation : UIImageOrientation?
+                    
+                    // SAVE IMAGE ORIENTATION TO newImageOrientation DEPENDING UPON DEVICE ROTATION
+                    if (orientation == 1) {
+                        newImageOrientation = UIImageOrientation.Right
+                    } else if (orientation == 3) {
+                        newImageOrientation = UIImageOrientation.Up
+                    } else if (orientation == 4) {
+                        newImageOrientation = UIImageOrientation.Down
+                    }
+                    
+                    // CREATE NEW IMAGE AND PRESERVE CORRECT ORIENTATION
+                    self.lastImage = UIImage(CGImage: cgImage!, scale: 1.0, orientation: newImageOrientation!)
+                    
+                    // IF THE REMOTE CONTROL DEVICE OPTED TO SAVE PHOTOS, TRANSFER THE PHOTO FILE
                     if (self.sendPhoto!) {
                         let outputFilePath = NSURL(fileURLWithPath: NSTemporaryDirectory()).URLByAppendingPathComponent("photo.jpg")
                         UIImageJPEGRepresentation(self.lastImage!, 100)?.writeToURL(outputFilePath, atomically: true)
                         self.cameraService.transferFile(outputFilePath)
                     }
                     
+                    // IF THE CAMERA OPTED TO SAVE PHOTOS, SAVE THE PHOTO TO CAMERA ROLL
                     if (self.savePhoto!) {
                         ALAssetsLibrary().writeImageToSavedPhotosAlbum(self.lastImage!.CGImage, orientation: ALAssetOrientation(rawValue: self.lastImage!.imageOrientation.rawValue)!, completionBlock: nil)
                     }
@@ -446,8 +459,6 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
             self.greenTextField.hidden = true
             self.blueTextField.hidden = true
         }
-        
-        print("CAMERA SETTINGS LOCK HAS BEEN CHANGED TO: \(self.locked)")
     }
     
     @IBAction func isoTextFieldEditingDidEnd(sender: AnyObject) {
@@ -523,7 +534,6 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
     }
     
     @IBAction func focusAndExposeTap(gestureRecognizer: UIGestureRecognizer) {
-        print("will reset configuration: \(!self.locked)")
         if !self.locked {
             let devicePoint: CGPoint = (self.previewView.layer as! AVCaptureVideoPreviewLayer).captureDevicePointOfInterestForPoint(gestureRecognizer.locationInView(gestureRecognizer.view))
             
