@@ -20,7 +20,7 @@
                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
                         <subviews>
                             <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="YPp-r6-U4L">
-                                <rect key="frame" x="48" y="330" width="504" height="80"/>
+                                <rect key="frame" x="38" y="330" width="524" height="80"/>
                                 <color key="backgroundColor" white="0.33333333333333331" alpha="1" colorSpace="calibratedWhite"/>
                                 <constraints>
                                     <constraint firstAttribute="height" constant="80" id="0Ho-w8-419"/>
@@ -40,7 +40,7 @@
                                 </connections>
                             </button>
                             <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="bUY-AY-Upd">
-                                <rect key="frame" x="48" y="469" width="504" height="80"/>
+                                <rect key="frame" x="38" y="469" width="524" height="80"/>
                                 <color key="backgroundColor" white="0.33333333333333331" alpha="1" colorSpace="calibratedWhite"/>
                                 <constraints>
                                     <constraint firstAttribute="width" constant="280" id="3n9-r3-teD"/>
@@ -100,14 +100,14 @@
                         <constraints>
                             <constraint firstAttribute="trailingMargin" secondItem="yOq-Vf-jEM" secondAttribute="trailing" constant="20" id="5Et-bk-mL1"/>
                             <constraint firstAttribute="trailingMargin" secondItem="cSl-Hz-aND" secondAttribute="trailing" id="5PK-lZ-4wX"/>
-                            <constraint firstAttribute="trailingMargin" secondItem="bUY-AY-Upd" secondAttribute="trailing" constant="28" id="DNr-At-wh4"/>
+                            <constraint firstAttribute="trailingMargin" secondItem="bUY-AY-Upd" secondAttribute="trailing" constant="18" id="DNr-At-wh4"/>
                             <constraint firstItem="cSl-Hz-aND" firstAttribute="leading" secondItem="KmO-Hd-Bto" secondAttribute="leadingMargin" id="HbQ-nA-Hvc"/>
                             <constraint firstItem="yOq-Vf-jEM" firstAttribute="leading" secondItem="KmO-Hd-Bto" secondAttribute="leadingMargin" constant="20" id="IG2-CM-pyj"/>
-                            <constraint firstItem="bUY-AY-Upd" firstAttribute="leading" secondItem="KmO-Hd-Bto" secondAttribute="leadingMargin" constant="28" id="RVM-pN-RMt"/>
+                            <constraint firstItem="bUY-AY-Upd" firstAttribute="leading" secondItem="KmO-Hd-Bto" secondAttribute="leadingMargin" constant="18" id="RVM-pN-RMt"/>
                             <constraint firstItem="nC2-H5-AXR" firstAttribute="centerX" secondItem="KmO-Hd-Bto" secondAttribute="centerX" id="SNy-Xm-6fP"/>
                             <constraint firstItem="YPp-r6-U4L" firstAttribute="top" secondItem="yOq-Vf-jEM" secondAttribute="bottom" constant="44" id="YY6-dy-NdI"/>
-                            <constraint firstItem="YPp-r6-U4L" firstAttribute="leading" secondItem="KmO-Hd-Bto" secondAttribute="leadingMargin" constant="28" id="ZGk-Of-aGz"/>
-                            <constraint firstAttribute="trailingMargin" secondItem="YPp-r6-U4L" secondAttribute="trailing" constant="28" id="Zdl-1X-o6P"/>
+                            <constraint firstItem="YPp-r6-U4L" firstAttribute="leading" secondItem="KmO-Hd-Bto" secondAttribute="leadingMargin" constant="18" id="ZGk-Of-aGz"/>
+                            <constraint firstAttribute="trailingMargin" secondItem="YPp-r6-U4L" secondAttribute="trailing" constant="18" id="Zdl-1X-o6P"/>
                             <constraint firstItem="cSl-Hz-aND" firstAttribute="top" secondItem="nC2-H5-AXR" secondAttribute="bottom" constant="-10" id="a97-ze-dUc"/>
                             <constraint firstItem="bUY-AY-Upd" firstAttribute="top" secondItem="YPp-r6-U4L" secondAttribute="bottom" constant="59" id="baL-SN-1nm"/>
                             <constraint firstItem="nC2-H5-AXR" firstAttribute="leading" secondItem="KmO-Hd-Bto" secondAttribute="leadingMargin" constant="60" id="cLi-8f-ATP"/>
@@ -591,15 +591,37 @@ Placeholder text to see how this looks with three lines Getting camera setting
                                     <action selector="flashButtonTapped:" destination="qAQ-0C-97g" eventType="touchUpInside" id="5Ty-c6-6pH"/>
                                 </connections>
                             </button>
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="I0b-Xf-5Iw">
+                                <rect key="frame" x="20" y="358" width="560" height="140"/>
+                                <subviews>
+                                    <label hidden="YES" opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="File transfer label..." textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="x9q-II-uMo">
+                                        <rect key="frame" x="80" y="20" width="400" height="100"/>
+                                        <constraints>
+                                            <constraint firstAttribute="height" constant="100" id="8mk-AM-vl0"/>
+                                            <constraint firstAttribute="width" constant="400" id="YKo-y4-WHz"/>
+                                        </constraints>
+                                        <fontDescription key="fontDescription" name="GillSans" family="Gill Sans" pointSize="28"/>
+                                        <color key="textColor" red="0.0" green="0.0" blue="0.0" alpha="1" colorSpace="calibratedRGB"/>
+                                        <nil key="highlightedColor"/>
+                                    </label>
+                                </subviews>
+                                <color key="backgroundColor" white="0.0" alpha="0.0" colorSpace="calibratedWhite"/>
+                                <constraints>
+                                    <constraint firstItem="x9q-II-uMo" firstAttribute="centerX" secondItem="I0b-Xf-5Iw" secondAttribute="centerX" id="027-WG-0y6"/>
+                                    <constraint firstItem="x9q-II-uMo" firstAttribute="centerY" secondItem="I0b-Xf-5Iw" secondAttribute="centerY" id="Gnd-xQ-kFg"/>
+                                </constraints>
+                            </view>
                         </subviews>
                         <color key="backgroundColor" white="1" alpha="1" colorSpace="calibratedWhite"/>
                         <constraints>
                             <constraint firstItem="TUm-Nc-J84" firstAttribute="centerY" secondItem="6EO-bz-92i" secondAttribute="centerY" id="1tj-q9-99T"/>
+                            <constraint firstItem="cXj-D6-V0C" firstAttribute="top" secondItem="I0b-Xf-5Iw" secondAttribute="bottom" id="2ew-iV-Xoc"/>
                             <constraint firstItem="ewp-q9-eTU" firstAttribute="leading" secondItem="6EO-bz-92i" secondAttribute="leadingMargin" id="3oF-Nb-Ay4"/>
                             <constraint firstItem="c2K-5M-X3X" firstAttribute="top" secondItem="6EO-bz-92i" secondAttribute="topMargin" id="5jS-Au-X4l"/>
                             <constraint firstAttribute="trailingMargin" secondItem="c2K-5M-X3X" secondAttribute="trailing" constant="-6" id="6yF-Q3-PlM"/>
                             <constraint firstItem="piT-qg-Nyr" firstAttribute="centerX" secondItem="6EO-bz-92i" secondAttribute="centerX" id="AVf-9n-sVj"/>
                             <constraint firstItem="TUm-Nc-J84" firstAttribute="centerX" secondItem="6EO-bz-92i" secondAttribute="centerX" id="Bti-ne-Oo9"/>
+                            <constraint firstItem="I0b-Xf-5Iw" firstAttribute="leading" secondItem="6EO-bz-92i" secondAttribute="leadingMargin" id="Giz-mP-vaO"/>
                             <constraint firstItem="ewp-q9-eTU" firstAttribute="top" secondItem="6EO-bz-92i" secondAttribute="topMargin" constant="16" id="HWx-Hx-fkK"/>
                             <constraint firstItem="e0W-LP-Nzu" firstAttribute="centerX" secondItem="6EO-bz-92i" secondAttribute="centerX" id="Igb-bq-Y31"/>
                             <constraint firstItem="CcD-Qf-FdE" firstAttribute="top" secondItem="TUm-Nc-J84" secondAttribute="bottom" constant="80" id="Knq-7I-L8X"/>
@@ -607,6 +629,8 @@ Placeholder text to see how this looks with three lines Getting camera setting
                             <constraint firstItem="9JT-yG-e2k" firstAttribute="centerX" secondItem="6EO-bz-92i" secondAttribute="centerX" id="N1e-Iw-WMD"/>
                             <constraint firstItem="TUm-Nc-J84" firstAttribute="centerX" secondItem="6EO-bz-92i" secondAttribute="centerX" id="Wbr-mG-uG9"/>
                             <constraint firstItem="CcD-Qf-FdE" firstAttribute="top" secondItem="cXj-D6-V0C" secondAttribute="bottom" constant="14" id="Xfr-xv-BeI"/>
+                            <constraint firstItem="I0b-Xf-5Iw" firstAttribute="top" secondItem="TUm-Nc-J84" secondAttribute="bottom" id="Zy0-Pg-8Ea"/>
+                            <constraint firstAttribute="trailingMargin" secondItem="I0b-Xf-5Iw" secondAttribute="trailing" id="eZd-er-yMP"/>
                             <constraint firstItem="e0W-LP-Nzu" firstAttribute="top" secondItem="JrT-hM-9K0" secondAttribute="bottom" constant="40" id="fky-R5-aXw"/>
                             <constraint firstItem="9JT-yG-e2k" firstAttribute="centerY" secondItem="6EO-bz-92i" secondAttribute="centerY" id="gZw-OS-5k3"/>
                             <constraint firstItem="c2K-5M-X3X" firstAttribute="centerY" secondItem="ewp-q9-eTU" secondAttribute="centerY" id="lyl-rj-cI2"/>
@@ -622,6 +646,7 @@ Placeholder text to see how this looks with three lines Getting camera setting
                         </variation>
                     </view>
                     <connections>
+                        <outlet property="fileTransferLabel" destination="x9q-II-uMo" id="HRB-zF-5GJ"/>
                         <outlet property="flashButton" destination="cXj-D6-V0C" id="gyk-iE-bkW"/>
                         <outlet property="takePhoto" destination="9JT-yG-e2k" id="Rh7-Qx-v4y"/>
                         <outlet property="timerHelpLabel" destination="piT-qg-Nyr" id="LXr-JK-WLo"/>

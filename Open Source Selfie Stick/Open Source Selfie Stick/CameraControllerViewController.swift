@@ -27,6 +27,7 @@ class CameraControllerViewController : UIViewController {
     @IBOutlet weak var timerTextField: UITextField!
     @IBOutlet weak var timerHelpLabel: UILabel!
     @IBOutlet weak var flashButton: UIButton!
+    @IBOutlet weak var fileTransferLabel: UITextField!
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -38,6 +39,7 @@ class CameraControllerViewController : UIViewController {
         timerTextField.hidden = true
         timerTextField.keyboardType = .NumberPad
         timerHelpLabel.hidden = true
+        hideFileTransferLabel()
     }
     
     override func viewWillAppear(animated: Bool) {
@@ -129,6 +131,10 @@ class CameraControllerViewController : UIViewController {
         return true
     }
     
+    func hideFileTransferLabel() {
+        self.fileTransferLabel.hidden = true
+    }
+    
     // HIDE NUMPAD WHEN IT LOSES FOCUS AND SAVE TIMER VALUE
     override func touchesBegan(touches: Set<UITouch>, withEvent event: UIEvent?) {
         if (!timerTextField.hidden) {
@@ -165,21 +171,32 @@ extension CameraControllerViewController : CameraServiceManagerDelegate {
     
     func shutterButtonTapped(manager: CameraServiceManager, _ sendPhoto: Bool) {
         // DO NOTHING (This is where the Camera receives the command to take a photo)
+        // TO DO: Make some of these protocol functions optional
     }
     
     func toggleFlash(manager: CameraServiceManager) {
         // DO NOTHING (This is where the Camera receives the command to turn the flash on/off)
+        // TO DO: Make some of these protocol functions optional
     }
     
     func didStartReceivingData(manager: CameraServiceManager, withName resourceName: String, withProgress progress: NSProgress) {
+        NSOperationQueue.mainQueue().addOperationWithBlock({
+            self.fileTransferLabel.hidden = false
+            self.fileTransferLabel.text = "Receiving photo..."
+        })
     }
     
     func didFinishReceivingData(manager: CameraServiceManager, url: NSURL) {
         NSOperationQueue.mainQueue().addOperationWithBlock({
+            let fileSaveClosure : ALAssetsLibraryWriteImageCompletionBlock = {_,_ in
+                self.fileTransferLabel.text = "Photo saved to camera roll"
+                NSTimer.scheduledTimerWithTimeInterval(2, target: self, selector: "hideFileTransferLabel", userInfo: nil, repeats: false)
+            }
+            
             if (self.savePhoto!) {
                 // SAVE PHOTO TO PHOTOS APP
                 let data = NSData(contentsOfFile: url.absoluteString)
-                ALAssetsLibrary().writeImageDataToSavedPhotosAlbum(data, metadata: nil, completionBlock: nil)
+                ALAssetsLibrary().writeImageDataToSavedPhotosAlbum(data, metadata: nil, completionBlock: fileSaveClosure)
             }
         })
     }
