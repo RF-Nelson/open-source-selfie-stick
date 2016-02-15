@@ -19,15 +19,15 @@
                         <rect key="frame" x="0.0" y="0.0" width="600" height="600"/>
                         <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
                         <subviews>
-                            <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="YPp-r6-U4L">
-                                <rect key="frame" x="38" y="330" width="524" height="80"/>
+                            <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="wordWrap" translatesAutoresizingMaskIntoConstraints="NO" id="YPp-r6-U4L">
+                                <rect key="frame" x="28" y="330" width="544" height="80"/>
                                 <color key="backgroundColor" white="0.33333333333333331" alpha="1" colorSpace="calibratedWhite"/>
                                 <constraints>
                                     <constraint firstAttribute="height" constant="80" id="0Ho-w8-419"/>
                                     <constraint firstAttribute="width" constant="280" id="ERZ-LG-ylH"/>
                                 </constraints>
-                                <fontDescription key="fontDescription" name="GillSans" family="Gill Sans" pointSize="16"/>
-                                <state key="normal" title="THIS DEVICE WILL BE THE CAMERA">
+                                <fontDescription key="fontDescription" name="GillSans" family="Gill Sans" pointSize="15"/>
+                                <state key="normal" title="THIS WILL BE THE CAMERA">
                                     <color key="titleColor" red="0.96862745100000003" green="0.96862745100000003" blue="0.96862745100000003" alpha="1" colorSpace="calibratedRGB"/>
                                 </state>
                                 <variation key="default">
@@ -39,15 +39,15 @@
                                     <segue destination="XgF-yT-b8i" kind="show" id="vnE-jX-t90"/>
                                 </connections>
                             </button>
-                            <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="middleTruncation" translatesAutoresizingMaskIntoConstraints="NO" id="bUY-AY-Upd">
-                                <rect key="frame" x="38" y="469" width="524" height="80"/>
+                            <button opaque="NO" contentMode="scaleToFill" contentHorizontalAlignment="center" contentVerticalAlignment="center" buttonType="roundedRect" lineBreakMode="wordWrap" translatesAutoresizingMaskIntoConstraints="NO" id="bUY-AY-Upd">
+                                <rect key="frame" x="28" y="469" width="544" height="80"/>
                                 <color key="backgroundColor" white="0.33333333333333331" alpha="1" colorSpace="calibratedWhite"/>
                                 <constraints>
                                     <constraint firstAttribute="width" constant="280" id="3n9-r3-teD"/>
                                     <constraint firstAttribute="height" constant="80" id="NkE-eh-SeO"/>
                                 </constraints>
-                                <fontDescription key="fontDescription" name="GillSans" family="Gill Sans" pointSize="16"/>
-                                <state key="normal" title="THIS DEVICE WILL CONTROL THE CAMERA">
+                                <fontDescription key="fontDescription" name="GillSans" family="Gill Sans" pointSize="15"/>
+                                <state key="normal" title="THIS WILL CONTROL THE CAMERA">
                                     <color key="titleColor" red="0.96862745100000003" green="0.96862745100000003" blue="0.96862745100000003" alpha="1" colorSpace="calibratedRGB"/>
                                 </state>
                                 <variation key="default">
@@ -60,13 +60,13 @@
                                 </connections>
                             </button>
                             <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="What do you want to do with this device?" textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" minimumScaleFactor="0.40000000000000002" translatesAutoresizingMaskIntoConstraints="NO" id="yOq-Vf-jEM">
-                                <rect key="frame" x="40" y="256" width="520" height="30"/>
+                                <rect key="frame" x="40" y="266" width="520" height="30"/>
                                 <fontDescription key="fontDescription" name="GillSans" family="Gill Sans" pointSize="26"/>
                                 <color key="textColor" red="0.0" green="0.0" blue="0.0" alpha="1" colorSpace="calibratedRGB"/>
                                 <nil key="highlightedColor"/>
                             </label>
                             <imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalCompressionResistancePriority="749" image="logo" translatesAutoresizingMaskIntoConstraints="NO" id="nC2-H5-AXR">
-                                <rect key="frame" x="2" y="28" width="596" height="178"/>
+                                <rect key="frame" x="2" y="28" width="596" height="148"/>
                                 <constraints>
                                     <constraint firstAttribute="height" constant="184" id="0HU-pZ-Rtp"/>
                                 </constraints>
@@ -77,10 +77,10 @@
                                 </variation>
                             </imageView>
                             <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="cSl-Hz-aND">
-                                <rect key="frame" x="20" y="196" width="560" height="60"/>
+                                <rect key="frame" x="20" y="166" width="560" height="100"/>
                                 <subviews>
                                     <label opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="Please make sure both of your devices are on the same WiFi network or have Bluetooth enabled before continuing..." textAlignment="center" lineBreakMode="tailTruncation" numberOfLines="3" baselineAdjustment="alignBaselines" minimumScaleFactor="0.5" translatesAutoresizingMaskIntoConstraints="NO" id="wjX-go-rqs">
-                                        <rect key="frame" x="85" y="0.0" width="391" height="60"/>
+                                        <rect key="frame" x="85" y="20" width="391" height="60"/>
                                         <constraints>
                                             <constraint firstAttribute="height" constant="60" id="qZP-35-T4i"/>
                                         </constraints>
@@ -100,18 +100,19 @@
                         <constraints>
                             <constraint firstAttribute="trailingMargin" secondItem="yOq-Vf-jEM" secondAttribute="trailing" constant="20" id="5Et-bk-mL1"/>
                             <constraint firstAttribute="trailingMargin" secondItem="cSl-Hz-aND" secondAttribute="trailing" id="5PK-lZ-4wX"/>
-                            <constraint firstAttribute="trailingMargin" secondItem="bUY-AY-Upd" secondAttribute="trailing" constant="18" id="DNr-At-wh4"/>
+                            <constraint firstAttribute="trailingMargin" secondItem="bUY-AY-Upd" secondAttribute="trailing" constant="8" id="DNr-At-wh4"/>
                             <constraint firstItem="cSl-Hz-aND" firstAttribute="leading" secondItem="KmO-Hd-Bto" secondAttribute="leadingMargin" id="HbQ-nA-Hvc"/>
                             <constraint firstItem="yOq-Vf-jEM" firstAttribute="leading" secondItem="KmO-Hd-Bto" secondAttribute="leadingMargin" constant="20" id="IG2-CM-pyj"/>
-                            <constraint firstItem="bUY-AY-Upd" firstAttribute="leading" secondItem="KmO-Hd-Bto" secondAttribute="leadingMargin" constant="18" id="RVM-pN-RMt"/>
+                            <constraint firstItem="bUY-AY-Upd" firstAttribute="leading" secondItem="KmO-Hd-Bto" secondAttribute="leadingMargin" constant="8" id="RVM-pN-RMt"/>
                             <constraint firstItem="nC2-H5-AXR" firstAttribute="centerX" secondItem="KmO-Hd-Bto" secondAttribute="centerX" id="SNy-Xm-6fP"/>
-                            <constraint firstItem="YPp-r6-U4L" firstAttribute="top" secondItem="yOq-Vf-jEM" secondAttribute="bottom" constant="44" id="YY6-dy-NdI"/>
-                            <constraint firstItem="YPp-r6-U4L" firstAttribute="leading" secondItem="KmO-Hd-Bto" secondAttribute="leadingMargin" constant="18" id="ZGk-Of-aGz"/>
-                            <constraint firstAttribute="trailingMargin" secondItem="YPp-r6-U4L" secondAttribute="trailing" constant="18" id="Zdl-1X-o6P"/>
+                            <constraint firstItem="YPp-r6-U4L" firstAttribute="top" secondItem="yOq-Vf-jEM" secondAttribute="bottom" constant="34" id="YY6-dy-NdI"/>
+                            <constraint firstItem="YPp-r6-U4L" firstAttribute="leading" secondItem="KmO-Hd-Bto" secondAttribute="leadingMargin" constant="8" id="ZGk-Of-aGz"/>
+                            <constraint firstAttribute="trailingMargin" secondItem="YPp-r6-U4L" secondAttribute="trailing" constant="8" id="Zdl-1X-o6P"/>
                             <constraint firstItem="cSl-Hz-aND" firstAttribute="top" secondItem="nC2-H5-AXR" secondAttribute="bottom" constant="-10" id="a97-ze-dUc"/>
                             <constraint firstItem="bUY-AY-Upd" firstAttribute="top" secondItem="YPp-r6-U4L" secondAttribute="bottom" constant="59" id="baL-SN-1nm"/>
                             <constraint firstItem="nC2-H5-AXR" firstAttribute="leading" secondItem="KmO-Hd-Bto" secondAttribute="leadingMargin" constant="60" id="cLi-8f-ATP"/>
                             <constraint firstAttribute="trailingMargin" secondItem="nC2-H5-AXR" secondAttribute="trailing" constant="10" id="fRg-DO-pPW"/>
+                            <constraint firstItem="yOq-Vf-jEM" firstAttribute="top" relation="greaterThanOrEqual" secondItem="wjX-go-rqs" secondAttribute="bottom" constant="20" id="gWE-KO-247"/>
                             <constraint firstItem="8C4-O3-LqZ" firstAttribute="top" secondItem="bUY-AY-Upd" secondAttribute="bottom" constant="51" id="hfE-zo-hNE"/>
                             <constraint firstItem="nC2-H5-AXR" firstAttribute="top" secondItem="KmO-Hd-Bto" secondAttribute="top" constant="28" id="lvx-Dy-deZ"/>
                             <constraint firstAttribute="trailingMargin" secondItem="nC2-H5-AXR" secondAttribute="trailing" constant="-18" id="mZv-QY-Ucp"/>
