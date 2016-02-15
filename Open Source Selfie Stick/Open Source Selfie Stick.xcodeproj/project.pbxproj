@@ -108,7 +108,7 @@
 				TargetAttributes = {
 					DD6876B91C6CE476001DB25D = {
 						CreatedOnToolsVersion = 7.2.1;
-						DevelopmentTeam = 96M4X93EDL;
+						DevelopmentTeam = M9JB3ZB9N8;
 					};
 				};
 			};
@@ -269,7 +269,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = "Open Source Selfie Stick/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.richardnelson.Open-Source-Selfie-Stick";
+				PRODUCT_BUNDLE_IDENTIFIER = com.richardnelson.opensourceselfiestick;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Debug;
@@ -281,7 +281,7 @@
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				INFOPLIST_FILE = "Open Source Selfie Stick/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.richardnelson.Open-Source-Selfie-Stick";
+				PRODUCT_BUNDLE_IDENTIFIER = com.richardnelson.opensourceselfiestick;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 			};
 			name = Release;
