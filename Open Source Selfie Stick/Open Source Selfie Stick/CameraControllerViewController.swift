@@ -148,7 +148,6 @@ class CameraControllerViewController : UIViewController {
                 let fractionCompleted : Float = Float(self.fileTransferProgress.fractionCompleted)
                 self.progressView.setProgress(fractionCompleted, animated: true)
                 if fractionCompleted == 1.0 {
-                    print(fractionCompleted.description)
                     // DO THIS WHEN FILE TRANSFER IS COMPLETE
                     self.fileTransferLabel.text = "Saving photo to camera roll..."
                 }

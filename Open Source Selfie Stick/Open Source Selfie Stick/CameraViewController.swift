@@ -280,9 +280,12 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
                     (imageDataSampleBuffer, error) -> Void in
                     let imageData = AVCaptureStillImageOutput.jpegStillImageNSDataRepresentation(imageDataSampleBuffer)
                     self.lastImage = UIImage(data: imageData)!
-                    let outputFilePath = NSURL(fileURLWithPath: NSTemporaryDirectory()).URLByAppendingPathComponent("photo.jpg")
-                    UIImageJPEGRepresentation(self.lastImage!, 100)?.writeToURL(outputFilePath, atomically: true)
-                    self.cameraService.transferFile(outputFilePath)
+                    
+                    if (self.sendPhoto!) {
+                        let outputFilePath = NSURL(fileURLWithPath: NSTemporaryDirectory()).URLByAppendingPathComponent("photo.jpg")
+                        UIImageJPEGRepresentation(self.lastImage!, 100)?.writeToURL(outputFilePath, atomically: true)
+                        self.cameraService.transferFile(outputFilePath)
+                    }
                     
                     if (self.savePhoto!) {
                         ALAssetsLibrary().writeImageToSavedPhotosAlbum(self.lastImage!.CGImage, orientation: ALAssetOrientation(rawValue: self.lastImage!.imageOrientation.rawValue)!, completionBlock: nil)
@@ -301,8 +304,6 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
         if(error != nil){
             print(error)
         }
-        
-        self.cameraService.transferFile(outputFileURL)
     }
     
     func subjectAreaDidChange(notification: NSNotification){
