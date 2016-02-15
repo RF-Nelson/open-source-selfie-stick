@@ -246,7 +246,7 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
     }
     
     func promptToSavePhotos() {
-        let saveAlert = UIAlertController(title: "Save photos", message: "Do you want to save photos from this session to this device?", preferredStyle: UIAlertControllerStyle.Alert)
+        let saveAlert = UIAlertController(title: "Save photos to this device?", message: "Do you want to save photos from this session to this device?", preferredStyle: UIAlertControllerStyle.Alert)
         
         saveAlert.addAction(UIAlertAction(title: "Yes", style: .Default, handler: { (action: UIAlertAction!) in
             self.savePhoto = true

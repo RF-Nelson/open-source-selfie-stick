@@ -14,6 +14,8 @@ import UIKit
 import MultipeerConnectivity
 import AssetsLibrary
 
+var FileTransferProgressContext = "FileTransferProgressContext"
+
 class CameraControllerViewController : UIViewController {
     
     var cameraService = CameraServiceManager()
@@ -21,6 +23,7 @@ class CameraControllerViewController : UIViewController {
     var localURL : NSURL?
     var savePhoto : Bool?
     var timeDelay : Int?
+    dynamic var fileTransferProgress : NSProgress!
     
     @IBOutlet weak var takePhoto: UIButton!
     @IBOutlet weak var timerLabel: UILabel!
@@ -28,6 +31,7 @@ class CameraControllerViewController : UIViewController {
     @IBOutlet weak var timerHelpLabel: UILabel!
     @IBOutlet weak var flashButton: UIButton!
     @IBOutlet weak var fileTransferLabel: UITextField!
+    @IBOutlet weak var progressView: UIProgressView!
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -45,6 +49,9 @@ class CameraControllerViewController : UIViewController {
     override func viewWillAppear(animated: Bool) {
         super.viewWillAppear(animated)
         
+        self.progressView.hidden = true
+        self.progressView.progress = 0
+        
         self.cameraService.serviceBrowser.startBrowsingForPeers()
     }
     
@@ -59,7 +66,7 @@ class CameraControllerViewController : UIViewController {
     }
     
     func promptToSavePhotos() {
-        let saveAlert = UIAlertController(title: "Save photos to this device?", message: "Do you want to save photos from this session to this device? (If connected via Bluetooth, you should say no)", preferredStyle: UIAlertControllerStyle.Alert)
+        let saveAlert = UIAlertController(title: "Save photos to this device?", message: "Do you want to save photos from this session to this device? (If connected via Bluetooth, this may be slow)", preferredStyle: UIAlertControllerStyle.Alert)
         
         saveAlert.addAction(UIAlertAction(title: "Yes", style: .Default, handler: { (action: UIAlertAction!) in
             self.savePhoto = true
@@ -135,6 +142,22 @@ class CameraControllerViewController : UIViewController {
         self.fileTransferLabel.hidden = true
     }
     
+    override func observeValueForKeyPath(keyPath: String?, ofObject object: AnyObject?, change: [String : AnyObject]?, context: UnsafeMutablePointer<Void>) {
+        if (context == &FileTransferProgressContext) {
+            dispatch_async(dispatch_get_main_queue(), {
+                let fractionCompleted : Float = Float(self.fileTransferProgress.fractionCompleted)
+                self.progressView.setProgress(fractionCompleted, animated: true)
+                if fractionCompleted == 1.0 {
+                    print(fractionCompleted.description)
+                    // DO THIS WHEN FILE TRANSFER IS COMPLETE
+                    self.fileTransferLabel.text = "Saving photo to camera roll..."
+                }
+            })
+        } else {
+            return super.observeValueForKeyPath(keyPath, ofObject: object, change: change, context: context)
+        }
+    }
+    
     // HIDE NUMPAD WHEN IT LOSES FOCUS AND SAVE TIMER VALUE
     override func touchesBegan(touches: Set<UITouch>, withEvent event: UIEvent?) {
         if (!timerTextField.hidden) {
@@ -181,14 +204,27 @@ extension CameraControllerViewController : CameraServiceManagerDelegate {
     
     func didStartReceivingData(manager: CameraServiceManager, withName resourceName: String, withProgress progress: NSProgress) {
         NSOperationQueue.mainQueue().addOperationWithBlock({
-            self.fileTransferLabel.hidden = false
             self.fileTransferLabel.text = "Receiving photo..."
+            self.fileTransferLabel.hidden = false
+            self.progressView.hidden = false
+            self.fileTransferProgress = progress
+            
+            self.addObserver(self,
+                forKeyPath: "fileTransferProgress.fractionCompleted",
+                options: [.Old, .New],
+                context: &FileTransferProgressContext)
         })
     }
     
     func didFinishReceivingData(manager: CameraServiceManager, url: NSURL) {
         NSOperationQueue.mainQueue().addOperationWithBlock({
+            self.removeObserver(self,
+                forKeyPath: "fileTransferProgress.fractionCompleted",
+                context: &FileTransferProgressContext)
+            
             let fileSaveClosure : ALAssetsLibraryWriteImageCompletionBlock = {_,_ in
+                self.progressView.hidden = true
+                self.progressView.progress = 0
                 self.fileTransferLabel.text = "Photo saved to camera roll"
                 NSTimer.scheduledTimerWithTimeInterval(2, target: self, selector: "hideFileTransferLabel", userInfo: nil, repeats: false)
             }

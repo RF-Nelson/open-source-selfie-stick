@@ -3,7 +3,7 @@
 ### TO DO
 - [x] Give user the option to save photos on either or both devices
 - [x] Add an optional timer
-- [ ] Add file transfer status bar if remote control device is receiving a file
+- [x] Add file transfer status bar if remote control device is receiving a file
 - [ ] Viewable gallery of photos from current/most recent session
 - [ ] Detect Bluetooth connection and compress photo if being sent back to remote control device
 - [ ] Make a more aesthetically pleasing UI

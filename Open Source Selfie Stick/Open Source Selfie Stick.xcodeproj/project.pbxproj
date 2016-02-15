@@ -62,16 +62,16 @@
 		DD6876BC1C6CE476001DB25D /* Open Source Selfie Stick */ = {
 			isa = PBXGroup;
 			children = (
+				DD6876C31C6CE476001DB25D /* Main.storyboard */,
 				DD6876BD1C6CE476001DB25D /* AppDelegate.swift */,
 				DDA455101C6D0C6A0036CF38 /* AVCamPreviewController.swift */,
-				DD6876C31C6CE476001DB25D /* Main.storyboard */,
 				DDA4550A1C6CFF4A0036CF38 /* CameraServiceManager.swift */,
-				DD6876C61C6CE476001DB25D /* Assets.xcassets */,
-				DD6876C81C6CE476001DB25D /* LaunchScreen.storyboard */,
-				DD6876CB1C6CE476001DB25D /* Info.plist */,
 				DDA455081C6CF7680036CF38 /* InitialViewController.swift */,
 				DDA4550C1C6D0A8E0036CF38 /* CameraViewController.swift */,
 				DDA455121C6D0D560036CF38 /* CameraControllerViewController.swift */,
+				DD6876C81C6CE476001DB25D /* LaunchScreen.storyboard */,
+				DD6876CB1C6CE476001DB25D /* Info.plist */,
+				DD6876C61C6CE476001DB25D /* Assets.xcassets */,
 			);
 			path = "Open Source Selfie Stick";
 			sourceTree = "<group>";

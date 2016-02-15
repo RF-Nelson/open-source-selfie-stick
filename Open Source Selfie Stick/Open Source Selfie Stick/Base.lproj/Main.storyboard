@@ -595,20 +595,28 @@ Placeholder text to see how this looks with three lines Getting camera setting
                                 <rect key="frame" x="20" y="358" width="560" height="140"/>
                                 <subviews>
                                     <label hidden="YES" opaque="NO" userInteractionEnabled="NO" contentMode="left" horizontalHuggingPriority="251" verticalHuggingPriority="251" text="File transfer label..." textAlignment="center" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="x9q-II-uMo">
-                                        <rect key="frame" x="80" y="20" width="400" height="100"/>
+                                        <rect key="frame" x="80" y="20" width="400" height="60"/>
                                         <constraints>
-                                            <constraint firstAttribute="height" constant="100" id="8mk-AM-vl0"/>
+                                            <constraint firstAttribute="height" constant="60" id="8mk-AM-vl0"/>
                                             <constraint firstAttribute="width" constant="400" id="YKo-y4-WHz"/>
                                         </constraints>
                                         <fontDescription key="fontDescription" name="GillSans" family="Gill Sans" pointSize="28"/>
                                         <color key="textColor" red="0.0" green="0.0" blue="0.0" alpha="1" colorSpace="calibratedRGB"/>
                                         <nil key="highlightedColor"/>
                                     </label>
+                                    <progressView opaque="NO" contentMode="scaleToFill" verticalHuggingPriority="750" progress="0.5" translatesAutoresizingMaskIntoConstraints="NO" id="ZLY-W2-AMs">
+                                        <rect key="frame" x="120" y="96" width="320" height="2"/>
+                                        <color key="tintColor" white="0.33333333333333331" alpha="1" colorSpace="calibratedWhite"/>
+                                    </progressView>
                                 </subviews>
                                 <color key="backgroundColor" white="0.0" alpha="0.0" colorSpace="calibratedWhite"/>
                                 <constraints>
                                     <constraint firstItem="x9q-II-uMo" firstAttribute="centerX" secondItem="I0b-Xf-5Iw" secondAttribute="centerX" id="027-WG-0y6"/>
-                                    <constraint firstItem="x9q-II-uMo" firstAttribute="centerY" secondItem="I0b-Xf-5Iw" secondAttribute="centerY" id="Gnd-xQ-kFg"/>
+                                    <constraint firstAttribute="trailing" secondItem="ZLY-W2-AMs" secondAttribute="trailing" constant="120" id="64K-NP-sWe"/>
+                                    <constraint firstItem="ZLY-W2-AMs" firstAttribute="top" secondItem="x9q-II-uMo" secondAttribute="bottom" constant="16" id="Fvs-wE-CLe"/>
+                                    <constraint firstItem="x9q-II-uMo" firstAttribute="centerY" secondItem="I0b-Xf-5Iw" secondAttribute="centerY" constant="-20" id="Gnd-xQ-kFg"/>
+                                    <constraint firstItem="ZLY-W2-AMs" firstAttribute="centerX" secondItem="I0b-Xf-5Iw" secondAttribute="centerX" id="hN9-qC-RzC"/>
+                                    <constraint firstItem="ZLY-W2-AMs" firstAttribute="leading" secondItem="I0b-Xf-5Iw" secondAttribute="leading" constant="120" id="psE-xa-CC8"/>
                                 </constraints>
                             </view>
                         </subviews>
@@ -648,6 +656,7 @@ Placeholder text to see how this looks with three lines Getting camera setting
                     <connections>
                         <outlet property="fileTransferLabel" destination="x9q-II-uMo" id="HRB-zF-5GJ"/>
                         <outlet property="flashButton" destination="cXj-D6-V0C" id="gyk-iE-bkW"/>
+                        <outlet property="progressView" destination="ZLY-W2-AMs" id="PlD-xK-jC0"/>
                         <outlet property="takePhoto" destination="9JT-yG-e2k" id="Rh7-Qx-v4y"/>
                         <outlet property="timerHelpLabel" destination="piT-qg-Nyr" id="LXr-JK-WLo"/>
                         <outlet property="timerLabel" destination="TUm-Nc-J84" id="bmQ-OC-REm"/>

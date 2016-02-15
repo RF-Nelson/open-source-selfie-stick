@@ -160,14 +160,16 @@ extension CameraServiceManager : MCSessionDelegate {
             self.delegate?.toggleFlash(self)
         } else {
             // CREATE VARIABLE REPRESENTING WHETHER OR NOT TO SEND PHOTO BACK TO CONTROLLER
-            let sendPhoto : Bool?
-            if (dataString == "true") {
-                sendPhoto = true
-            } else {
-                sendPhoto = false
+            if (dataString == "true" || dataString  == "false") {
+                let sendPhoto : Bool?
+                if (dataString == "true") {
+                    sendPhoto = true
+                } else {
+                    sendPhoto = false
+                }
+                
+                self.delegate?.shutterButtonTapped(self, sendPhoto!)
             }
-            
-            self.delegate?.shutterButtonTapped(self, sendPhoto!)
         }
     }
     
@@ -185,7 +187,7 @@ extension CameraServiceManager : MCSessionDelegate {
     }
 }
 
-// PROBABLY SHOULD MAKE THIS AN @objc PROTOCOL AND MAKE SOME OF THESE FUNCTIONS OPTIONAL
+// TO DO: MAKE THIS AN @objc PROTOCOL AND MAKE SOME OF THESE FUNCTIONS OPTIONAL
 protocol CameraServiceManagerDelegate {
     func connectedDevicesChanged(manager: CameraServiceManager, state: MCSessionState, connectedDevices: [String])
     func shutterButtonTapped(manager: CameraServiceManager, _ sendPhoto: Bool)
