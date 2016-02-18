@@ -19,7 +19,7 @@ __*License*__<br>
 This software is licensed under the [MPL version 2.0](http://mozilla.org/MPL/2.0/).<br>
 
 __*Logo credits*__<br>
-Logo created with <a href="http://logomakr.com" title="Logo Maker">Logo Maker</a>. The camera, person, and phone icons seens within the logo are by <a href="http://www.freepik.com/">Freepik</a> from <a href="http://www.flaticon.com/">Flaticon</a>. They are licensed under <a href="http://creativecommons.org/licenses/by/3.0/" title="Creative Commons BY 3.0">CC BY 3.0</a>. These icons are also used in the App icon and within the app itself. The shields visible in this README are made possible by [IO Shields](http://shields.io/).
+Logo created with <a href="http://logomakr.com" title="Logo Maker">Logo Maker</a>. The camera, person, and phone icons seens within the logo are by <a href="http://www.freepik.com/">Freepik</a> from <a href="http://www.flaticon.com/">Flaticon</a>. They are licensed under <a href="http://creativecommons.org/licenses/by/3.0/" title="Creative Commons BY 3.0">CC BY 3.0</a>. These icons are also used in the App icon and within the app itself. The shields visible in this README are made possible by [Shields.IO](http://shields.io/).
 
 __*Special Thanks*__<br>
 Thanks to [Joystick Interactive](https://github.com/joystickinteractive/), [Alex Konrad](https://github.com/alexkonrad), [Ralf Ebert](https://www.ralfebert.de/tutorials/ios-swift-multipeer-connectivity/), [Ray Wenderlich](http://www.raywenderlich.com/), and my wife.<br>Without them this project may not exist.
