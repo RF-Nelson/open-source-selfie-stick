@@ -24,6 +24,9 @@ class CameraControllerViewController : UIViewController {
     var savePhoto : Bool?
     var timeDelay : Int?
     dynamic var fileTransferProgress : NSProgress!
+    var receivedApprovalFromPeer = false
+    var approvedPeer = false
+    var connectedToPeer = false
     
     @IBOutlet weak var takePhoto: UIButton!
     @IBOutlet weak var timerLabel: UILabel!
@@ -54,17 +57,7 @@ class CameraControllerViewController : UIViewController {
         
         self.cameraService.serviceBrowser.startBrowsingForPeers()
     }
-    
-    override func viewDidAppear(animated: Bool) {
-        super.viewWillAppear(animated)
-        
-        if (self.cameraService.session.connectedPeers.count > 0) {
-            enableButton()
-        }
-        
-        promptToSavePhotos()
-    }
-    
+
     func promptToSavePhotos() {
         let saveAlert = UIAlertController(title: "Save photos to this device?", message: "Do you want to save photos from this session to this device? (If connected via Bluetooth, this may be slow)", preferredStyle: UIAlertControllerStyle.Alert)
         
@@ -182,13 +175,40 @@ extension CameraControllerViewController : CameraServiceManagerDelegate {
         NSOperationQueue.mainQueue().addOperationWithBlock({
             switch (state) {
             case .Connected:
-                self.enableButton()
+                if (self.cameraService.session.connectedPeers.count == 1 && self.connectedToPeer == false) {
+                    let deviceName = self.cameraService.session.connectedPeers[0].displayName
+                    let connectionAlert = UIAlertController(title: "Ok to connect?", message: "Do you want to connect with the device named \(deviceName)", preferredStyle: UIAlertControllerStyle.Alert)
+                    connectionAlert.addAction(UIAlertAction(title: "Yes", style: .Default, handler: { (action: UIAlertAction!) in
+                        self.approvedPeer = true
+                        if (self.receivedApprovalFromPeer) {
+                            self.promptToSavePhotos()
+                            self.enableButton()
+                            self.connectedToPeer = true
+                        }
+                        
+                    }))
+                    connectionAlert.addAction(UIAlertAction(title:"No", style: .Cancel, handler: nil))
+                    self.presentViewController(connectionAlert, animated: true, completion: nil)
+                    
+                } else if (self.cameraService.session.connectedPeers.count > 1) {
+                    // TO DO: Show list of available devices
+                } else if (self.cameraService.session.connectedPeers.count == 0 && self.connectedToPeer == true) {
+                    self.connectedToPeer = false
+                }
             case .Connecting:
                 break
             case .NotConnected:
                 self.disableButton()
             }
         })
+    }
+    
+    func acceptInvitation(manager: CameraServiceManager) {
+        self.receivedApprovalFromPeer = true
+        if (self.approvedPeer) {
+            self.promptToSavePhotos()
+            self.enableButton()
+        }
     }
     
     func shutterButtonTapped(manager: CameraServiceManager, _ sendPhoto: Bool) {

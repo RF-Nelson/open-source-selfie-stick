@@ -31,6 +31,7 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
     var savePhoto : Bool?
     var sendPhoto : Bool?
     var lastImage : UIImage?
+    var connectedToPeer = false
     
     var iso : Float = 300.0
     var minIso : Float?
@@ -215,8 +216,6 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
         super.viewDidAppear(animated)
         
         self.focusWithMode(AVCaptureFocusMode.AutoFocus, exposureMode: AVCaptureExposureMode.AutoExpose, point: CGPoint(x: 0.5, y: 0.5), monitorSubjectAreaChange: true)
-        
-        promptToSavePhotos()
     }
     
     override func viewWillDisappear(animated: Bool) {
@@ -602,8 +601,22 @@ class CameraViewController: UIViewController, AVCaptureFileOutputRecordingDelega
 
 extension CameraViewController : CameraServiceManagerDelegate {
     func connectedDevicesChanged(manager: CameraServiceManager, state: MCSessionState, connectedDevices: [String]) {
-        // TO DO: ADD SOME KIND OF AUTHENTICATION
-        // FOR NOW, IT AUTOMATICALLY CONNECTS
+        if (self.cameraService.session.connectedPeers.count == 1 && self.connectedToPeer == false) {
+            let deviceName = self.cameraService.session.connectedPeers[0].displayName
+            let connectionAlert = UIAlertController(title: "Ok to connect?", message: "Do you want to connect with the device named \(deviceName)", preferredStyle: UIAlertControllerStyle.Alert)
+            connectionAlert.addAction(UIAlertAction(title: "Yes", style: .Default, handler: { (action: UIAlertAction!) in
+                self.cameraService.acceptInvitation()
+                self.promptToSavePhotos()
+                self.connectedToPeer = true
+            }))
+            connectionAlert.addAction(UIAlertAction(title:"No", style: .Cancel, handler: nil))
+            self.presentViewController(connectionAlert, animated: true, completion: nil)
+            
+        } else if (self.cameraService.session.connectedPeers.count > 1) {
+            // TO DO: Show list of available devices
+        } else if (self.cameraService.session.connectedPeers.count == 0 && self.connectedToPeer == true) {
+            self.connectedToPeer = false
+        }
     }
     
     func shutterButtonTapped(manager: CameraServiceManager, _ sendPhoto: Bool) {
@@ -611,6 +624,10 @@ extension CameraViewController : CameraServiceManagerDelegate {
         dispatch_async(dispatch_get_main_queue(), {
             self.takePhoto()
         })
+    }
+    
+    func acceptInvitation(manager: CameraServiceManager) {
+        // TO DO: MAKE THIS OPTIONAL
     }
     
     func toggleFlash(manager: CameraServiceManager) {

@@ -83,6 +83,18 @@ class CameraServiceManager : NSObject {
         }
     }
     
+    func acceptInvitation() {
+        // TO DO: Send string with device name for better security
+        do {
+            let dataString = "acceptInvitation"
+            // ATTEMPT TO SEND DATA TO CAMERA
+            try self.session.sendData((dataString.dataUsingEncoding(NSUTF8StringEncoding))!, toPeers: self.session.connectedPeers, withMode: MCSessionSendDataMode.Reliable)
+        }
+        catch {
+            print("SOMETHING WENT WRONG IN CameraServiceManager.toggleFlash()")
+        }
+    }
+    
     func transferFile(file: NSURL) {
         if session.connectedPeers.count > 0 {
             for id in session.connectedPeers {
@@ -158,6 +170,8 @@ extension CameraServiceManager : MCSessionDelegate {
         // CHECK DATA STRING AND ACT ACCORDINGLY
         if (dataString == "toggleFlash") {
             self.delegate?.toggleFlash(self)
+        } else if (dataString == "acceptInvitation") {
+            self.delegate?.acceptInvitation(self)
         } else {
             // CREATE VARIABLE REPRESENTING WHETHER OR NOT TO SEND PHOTO BACK TO CONTROLLER
             if (dataString == "true" || dataString  == "false") {
@@ -192,6 +206,7 @@ protocol CameraServiceManagerDelegate {
     func connectedDevicesChanged(manager: CameraServiceManager, state: MCSessionState, connectedDevices: [String])
     func shutterButtonTapped(manager: CameraServiceManager, _ sendPhoto: Bool)
     func toggleFlash(manager: CameraServiceManager)
+    func acceptInvitation(manager: CameraServiceManager)
     func didStartReceivingData(manager: CameraServiceManager, withName resourceName: String, withProgress progress: NSProgress)
     func didFinishReceivingData(manager: CameraServiceManager, url: NSURL)
 }
