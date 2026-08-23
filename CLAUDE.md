@@ -9,6 +9,7 @@ iOS app (SwiftUI, Swift 6, iOS 18+) that makes one iPhone/iPad a remote control 
   `xcodebuild -project PairAndShoot.xcodeproj -scheme PairAndShoot -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build`
 - Device build: same with `-sdk iphoneos -destination 'generic/platform=iOS'`
 - Tests (fast, native macOS, no simulator): `cd Packages/PairAndShootCore && swift test`
+- TestFlight upload (archive + upload, internal testing only): `Tools/testflight-upload.sh` — Xcode must be signed in to richfnelson@gmail.com; the internal group "App Store Connect Users" gets Xcode builds automatically
 - Icon: `swift Tools/render-icon.swift` (writes the three appearances into the asset catalog and `docs/icon.png`)
 
 ## Layout

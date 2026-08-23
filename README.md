@@ -47,6 +47,8 @@ cd Packages/PairAndShootCore && swift test
 
 They also run from Xcode's test navigator (the shared scheme includes them).
 
+To put a build on TestFlight for internal testers, run `Tools/testflight-upload.sh` (archives, signs and uploads; Xcode must be signed in to the developer account).
+
 ## Architecture
 
 ```
