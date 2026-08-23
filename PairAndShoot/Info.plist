@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>Pair &amp; Shoot</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_pairandshoot._tcp</string>
+		<string>_pairandshoot._udp</string>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>Pair &amp; Shoot uses the camera to take the photos and videos you ask for from the paired remote.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Pair &amp; Shoot finds the other iPhone or iPad and sends it commands and photos over your local network.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>The microphone records sound for your videos.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Photos and videos are saved to your library. The app never reads your existing photos.</string>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+</dict>
+</plist>
