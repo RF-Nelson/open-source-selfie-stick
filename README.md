@@ -9,7 +9,7 @@ Photos and video, over Wi-Fi or Bluetooth, with copies sent back to the remote i
 <img src="https://img.shields.io/badge/platform-iOS%2018%2B-lightgrey.svg?style=flat" alt="iOS 18+"> <img src="https://img.shields.io/badge/swift-6-orange.svg?style=flat" alt="Swift 6"> <img src="https://img.shields.io/badge/license-MPL--2.0-lightgrey.svg?style=flat" alt="MPL 2.0">
 </div>
 
-> **Status:** version 2.0 is a from-scratch rebuild of the 2016 app *Open Source Selfie Stick* (kept at tag [`v1.0-legacy`](../../tree/v1.0-legacy)). The logic layer is complete and covered by tests; the app compiles for iOS 18–26 but has **not yet been exercised on two physical devices** — see [Status](#status). "Pair &amp; Shoot" is a working title.
+> **Status:** version 2.0 is a from-scratch rebuild of the 2016 app *Open Source Selfie Stick* (kept at tag [`v1.0-legacy`](../../tree/v1.0-legacy)). The logic layer is complete and covered by tests; the app compiles for iOS 18–26 but has **not yet been exercised on two physical devices** — see [Status](#status).
 
 ## What it does
 

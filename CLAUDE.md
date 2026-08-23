@@ -1,6 +1,6 @@
 # Pair & Shoot — notes for Claude Code
 
-iOS app (SwiftUI, Swift 6, iOS 18+) that makes one iPhone/iPad a remote control for another's camera over MultipeerConnectivity. Working title "Pair & Shoot"; bundle ID stays `com.richardnelson.opensourceselfiestick` (the 2016 App Store listing).
+iOS app (SwiftUI, Swift 6, iOS 18+) that makes one iPhone/iPad a remote control for another's camera over MultipeerConnectivity. Named "Pair & Shoot" (decided 2026-08-23); bundle ID stays `com.richardnelson.opensourceselfiestick` (the 2016 App Store listing).
 
 ## Commands
 

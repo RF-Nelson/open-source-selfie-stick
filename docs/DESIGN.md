@@ -15,22 +15,13 @@ Principles, in priority order:
 
 ## Name
 
-Working title: **Pair & Shoot** — a riff on *point and shoot* that literally describes the flow (pair the two devices, then shoot). It's short enough not to truncate under the icon, says "camera", and implies "two devices".
+**Pair & Shoot** — decided 23 August 2026. A riff on *point and shoot* that literally describes the flow: pair the two devices, then shoot. It's short enough not to truncate under the icon, says "camera", and implies "two devices" — the two things the 2016 name failed to say.
 
-Ranked alternatives, all of which explain the product better than the old name:
+Where the name lives: `CFBundleDisplayName` in `Info.plist`, the target / folder / module `PairAndShoot`, the role picker title, the Bonjour service type `pairandshoot`, and these docs. The bundle ID stays `com.richardnelson.opensourceselfiestick` so the 2016 App Store listing carries over; the GitHub repository can keep its old name (GitHub redirects renamed repositories) or be renamed to `pair-and-shoot` whenever convenient.
 
-| Name | For | Against |
-|---|---|---|
-| **Pair & Shoot** | Says pair + camera; memorable; fits under the icon | Pun may feel cute to some |
-| **Snap Remote** | Literal; brandable as one word | "Snap" evokes Snapchat |
-| **Second Shooter** | Photographers' term for an assistant; warm | Non-photographers may not get "remote" |
-| **Shutter Link** | Literal, technical | Bland |
-| **Camera Clicker** | Plain-language remote metaphor | Truncates under the icon at 14 characters |
-| **Remote Shutter** | Most literal | Generic, several existing apps, and Apple's own Watch app is *Camera Remote* |
+App Store metadata: title *Pair & Shoot*, subtitle *Remote shutter for two iPhones* (exactly 30 characters). Apple's own Watch app **Camera Remote** does this job with a Watch; the pitch here is the same idea with any second iPhone or iPad, plus video and copies sent back.
 
-App Store metadata can carry the explanation regardless of the name: title (30 characters) plus subtitle (30 characters), e.g. *Pair & Shoot* / *Remote shutter for two iPhones*. Note that Apple's Watch app **Camera Remote** does exactly this with a Watch; this app's pitch is the same idea with a second iPhone or iPad, plus video and copies sent back.
-
-Renaming later costs: the target/folder name in `project.yml` and on disk, `CFBundleDisplayName` in `Info.plist`, the string in `RolePickerView`, and `docs/`. The bundle ID and the Bonjour service type can stay.
+Considered and set aside: *Snap Remote* (Snapchat association), *Second Shooter* (photographers' jargon that doesn't say "remote"), *Shutter Link* (bland), *Camera Clicker* (truncates under the icon), *Remote Shutter* (generic, several existing apps, and it collides with Apple's *Camera Remote*).
 
 ## Visual system
 
