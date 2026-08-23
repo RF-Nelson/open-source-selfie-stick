@@ -348,3 +348,37 @@ struct CaptureThumbnail: View {
         .accessibilityLabel(result == nil ? "No captures yet" : (result?.kind == .video ? "Last video" : "Last photo"))
     }
 }
+
+/// Shown wherever a capture would be saved when Photos access has been refused.
+struct PhotoAccessWarning: View {
+    let access: PhotoLibraryAccess
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.title3)
+                .foregroundStyle(.yellow)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Photos access is off")
+                    .font(.subheadline.weight(.semibold))
+                Text(access.status == .restricted
+                     ? "This device doesn't allow saving to Photos, so nothing can be kept here."
+                     : "Nothing can be saved to this device until you allow it in Settings.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            if access.status == .denied {
+                Button("Settings") { access.openSettings() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(.yellow)
+            }
+        }
+        .padding(14)
+        .background(Color.yellow.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.yellow.opacity(0.35)))
+        .accessibilityElement(children: .combine)
+    }
+}

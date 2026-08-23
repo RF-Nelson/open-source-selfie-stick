@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct RolePickerView: View {
+    let photoAccess: PhotoLibraryAccess
     let onSelect: (Role) -> Void
 
     var body: some View {
@@ -17,6 +18,10 @@ struct RolePickerView: View {
                         .frame(maxWidth: 320)
                 }
                 .padding(.top, 24)
+
+                if photoAccess.isDenied {
+                    PhotoAccessWarning(access: photoAccess)
+                }
 
                 VStack(spacing: 14) {
                     RoleCard(
@@ -125,5 +130,5 @@ private struct HowItWorks: View {
 }
 
 #Preview {
-    RolePickerView { _ in }
+    RolePickerView(photoAccess: PhotoLibraryAccess()) { _ in }
 }

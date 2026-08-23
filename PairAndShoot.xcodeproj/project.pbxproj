@@ -12,6 +12,7 @@
 		339605866D864150BCD100EA /* DeviceIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EC7188830A29B9E1C722700 /* DeviceIdentity.swift */; };
 		55C865FDAC10A41FD212A4F1 /* CameraScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 535611F745F2CFD5E2937961 /* CameraScreen.swift */; };
 		608FE6FE93DC25B71EDCB473 /* PairAndShootApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FF59C934696DDAE58EF30C7 /* PairAndShootApp.swift */; };
+		71E4C754029CCFD8429EB91E /* PhotoLibraryAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ADF9F624F8914AFDF056557 /* PhotoLibraryAccess.swift */; };
 		7A3389F930BE04CCDA6118B4 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 932FB559753841B7B772F9FB /* RootView.swift */; };
 		7CCD0C1657DDDCA667E57D62 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B24D41DA2800CD15E0960C8 /* Theme.swift */; };
 		89B92D60CD533CCB6CF77BD0 /* PhotoKitMediaStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3C45F3CF5FA5AF83A27D70F /* PhotoKitMediaStore.swift */; };
@@ -33,6 +34,7 @@
 		3B24D41DA2800CD15E0960C8 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		3EC7188830A29B9E1C722700 /* DeviceIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentity.swift; sourceTree = "<group>"; };
 		448452E8EE6950F21D808229 /* RemoteScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteScreen.swift; sourceTree = "<group>"; };
+		4ADF9F624F8914AFDF056557 /* PhotoLibraryAccess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryAccess.swift; sourceTree = "<group>"; };
 		4E1D4583DEC16A70D740F91D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		535611F745F2CFD5E2937961 /* CameraScreen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraScreen.swift; sourceTree = "<group>"; };
 		5EA423426D0E2C914F479956 /* ImageThumbnailMaker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageThumbnailMaker.swift; sourceTree = "<group>"; };
@@ -116,6 +118,7 @@
 			children = (
 				3EC7188830A29B9E1C722700 /* DeviceIdentity.swift */,
 				6FF59C934696DDAE58EF30C7 /* PairAndShootApp.swift */,
+				4ADF9F624F8914AFDF056557 /* PhotoLibraryAccess.swift */,
 				08B74FC25277A90599C000B7 /* RolePickerView.swift */,
 				932FB559753841B7B772F9FB /* RootView.swift */,
 			);
@@ -225,6 +228,7 @@
 				B5C57FD39AD44B0344217081 /* ImageThumbnailMaker.swift in Sources */,
 				608FE6FE93DC25B71EDCB473 /* PairAndShootApp.swift in Sources */,
 				89B92D60CD533CCB6CF77BD0 /* PhotoKitMediaStore.swift in Sources */,
+				71E4C754029CCFD8429EB91E /* PhotoLibraryAccess.swift in Sources */,
 				DA34F52D9F7C5933471037CE /* RemoteScreen.swift in Sources */,
 				E032FA13ABAFE93EC6ED165D /* RolePickerView.swift in Sources */,
 				7A3389F930BE04CCDA6118B4 /* RootView.swift in Sources */,

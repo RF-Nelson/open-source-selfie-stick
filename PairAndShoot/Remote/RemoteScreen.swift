@@ -8,6 +8,7 @@ struct RemoteScreen: View {
     @State private var model: RemoteModel?
     @State private var codeTarget: Peer?
     @State private var showSettings = false
+    @Environment(PhotoLibraryAccess.self) private var photoAccess
 
     var body: some View {
         ZStack {
@@ -41,6 +42,11 @@ struct RemoteScreen: View {
             header(model)
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
+            if photoAccess.isDenied {
+                PhotoAccessWarning(access: photoAccess)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+            }
             switch model.connection {
             case .idle, .browsing:
                 DiscoveryView(model: model) { codeTarget = $0 }
@@ -258,6 +264,7 @@ private struct RemoteSettingsSheet: View {
     @Bindable var model: RemoteModel
     @AppStorage(DeviceIdentity.nicknameKey) private var nickname = ""
     @Environment(\.dismiss) private var dismiss
+    @Environment(PhotoLibraryAccess.self) private var photoAccess
 
     var body: some View {
         NavigationStack {
@@ -268,7 +275,11 @@ private struct RemoteSettingsSheet: View {
                 } header: {
                     Text("Send copies to this device")
                 } footer: {
-                    Text("Photos arrive in a few seconds over Wi-Fi. Videos are large: a one-minute clip can take several minutes over Bluetooth. Either way the camera keeps its own copy unless you turn that off on the camera.")
+                    if photoAccess.isDenied {
+                        Text("Photos access is off, so copies can't be saved here until you allow it in Settings.")
+                    } else {
+                        Text("Photos arrive in a few seconds over Wi-Fi. Videos are large: a one-minute clip can take several minutes over Bluetooth. Either way the camera keeps its own copy unless you turn that off on the camera.")
+                    }
                 }
                 Section {
                     Picker("Timer", selection: $model.timerSeconds) {

@@ -40,6 +40,7 @@ struct CameraScreen: View {
     @State private var confirmDisconnect = false
     @State private var localTimer = 0
     @State private var zoomBase: CGFloat = 1
+    @Environment(PhotoLibraryAccess.self) private var photoAccess
 
     var body: some View {
         ZStack {
@@ -95,6 +96,10 @@ struct CameraScreen: View {
             } else {
                 VStack(spacing: 0) {
                     topBar(model)
+                    if photoAccess.isDenied {
+                        PhotoAccessWarning(access: photoAccess)
+                            .padding(.top, 12)
+                    }
                     Spacer()
                     if !model.link.isConnected, model.availability == .ready {
                         PairingCard(model: model)
@@ -288,6 +293,7 @@ private struct CameraSettingsSheet: View {
     @Bindable var model: CameraHostModel
     @AppStorage(DeviceIdentity.nicknameKey) private var nickname = ""
     @Environment(\.dismiss) private var dismiss
+    @Environment(PhotoLibraryAccess.self) private var photoAccess
 
     var body: some View {
         NavigationStack {
@@ -297,7 +303,11 @@ private struct CameraSettingsSheet: View {
                 } header: {
                     Text("This device")
                 } footer: {
-                    Text("Off means captures only exist on the remote (when it asks for them). Turn it off if this device is borrowed.")
+                    if photoAccess.isDenied {
+                        Text("Photos access is off, so nothing will be saved here until you allow it in Settings.")
+                    } else {
+                        Text("Off means captures only exist on the remote (when it asks for them). Turn it off if this device is borrowed.")
+                    }
                 }
                 Section {
                     LabeledContent("Code", value: model.pairingCode.digits)
