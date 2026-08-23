@@ -1,36 +1,91 @@
-<div align="center"><img src="http://i.imgur.com/gbbeJFH.png"/><br><br><a href="https://itunes.apple.com/app/id1084487132"><img src="http://i.imgur.com/4PZ77Qb.png" /></a><br><br><br>
-<img src="https://img.shields.io/badge/platform-iOS-lightgrey.svg?style=flat)" /> <img src="https://img.shields.io/badge/license-MPL-lightgrey.svg?style=flat" />
-<br><br></div>
+<div align="center">
+<img src="docs/icon.png" width="128" alt="Pair &amp; Shoot icon"><br><br>
 
-_Q: What is Open Source Selfie Stick?_<br>
-A: With this free app you can use any iPhone or iPad as a remote control for the camera on any other iPhone or iPad! Open Source Selfie Stick allows you to pair any two iOS devices over WiFi or Bluetooth and use one as a camera and the other as a remote control for that camera--just tap the button on the remote control iPhone/iPad, and the iPhone/iPad designated as the camera will snap a photo. You can choose to save the photos to the camera device, the remote control device, or both! The app acts as a sort-of "virtual" selfie stick.<br><br>
-_Q: How does this app work?_<br>A: This app leverages the [Multipeer Connectivity Framework](https://developer.apple.com/library/ios/documentation/MultipeerConnectivity/Reference/MultipeerConnectivityFramework/) to allow the devices to communicate over WiFi or Bluetooth.<br><br>
-_Q: Does it work well over Bluetooth?_<br>A: Bluetooth is much slower than WiFi. It can take 10-20 seconds to send a photo from the camera to the remote control over Bluetooth; over WiFi this process takes 2-3 seconds. If you do not wish to save the photos to the iPhone/iPad acting as the remote control, Bluetooth will suffice.<br><br>
-_Q: Can I contribute to the development of this app?_<br>A: Yes! Feel free to fork this repo, look at the to-do list, and make a pull request. The `master` branch represents the code of the app that is currently available in the app store. The `dev` branch will be the codebase for the next app update. If you'd like you contribute, you should fork the `dev` branch. <br><br>
-_Q: Can I download this app from the App Store?_<br>A: Yes! <a href="https://itunes.apple.com/app/id1084487132">Click here</a> to be taken to the App Store. Alternatively, you can download this project on any Mac, open it with Xcode 7.2.1, and build it on any Apple mobile device with iOS v8.1 or higher via USB.<br><br>
-_Q: I found a bug. How do I report it?_<br>A: Create a [new issue](https://github.com/RF-Nelson/open-source-selfie-stick/issues/new) on GitHub's issue tracker. Please provide as much detail as possible so we can attempt to reproduce the error you're experiencing.<br><br>
-_Q: How did you make this app?_<br>A: To learn more about how this app was made, check out the [tutorial](https://gist.github.com/RF-Nelson/8a3e6319b0607cf6b181ae4ee00f6c4c) I created which details the process of using the Multipeer Connectivity Framework to transfer data between two devices.
+# Pair &amp; Shoot
 
-### TO DO
-- [x] Give user the option to save photos on either or both devices
-- [x] Add an optional timer
-- [x] Add file transfer progress bar if remote control device is receiving a file
-- [ ] Viewable gallery of photos from current/most recent session
-- [ ] Make a more aesthetically pleasing UI
-- [ ] Share your newly taken photos on Facebook and Twitter with SocialKit
-- [ ] Allow the recording and sharing of video clips
-- [ ] Allow the device acting as the remote control to receive a live video feed
-- [ ] Allow multiple devices to act as cameras or remotes
-- [ ] Refactor
-- [ ] Come up with a better name than "Open Source Selfie Stick"
-- [ ] Add support for multiple languages
+**Turn a second iPhone or iPad into a remote control for another one's camera.**<br>
+Photos and video, over Wi-Fi or Bluetooth, with copies sent back to the remote if you want them.
 
-<br><br>
-__*License*__<br>
-This software is licensed under the [MPL version 2.0](http://mozilla.org/MPL/2.0/).<br>
+<img src="https://img.shields.io/badge/platform-iOS%2018%2B-lightgrey.svg?style=flat" alt="iOS 18+"> <img src="https://img.shields.io/badge/swift-6-orange.svg?style=flat" alt="Swift 6"> <img src="https://img.shields.io/badge/license-MPL--2.0-lightgrey.svg?style=flat" alt="MPL 2.0">
+</div>
 
-__*Logo credits*__<br>
-Logo created with <a href="http://logomakr.com" title="Logo Maker">Logo Maker</a>. The camera, person, and phone icons seens within the logo are by <a href="http://www.freepik.com/">Freepik</a> from <a href="http://www.flaticon.com/">Flaticon</a>. They are licensed under <a href="http://creativecommons.org/licenses/by/3.0/" title="Creative Commons BY 3.0">CC BY 3.0</a>. These icons are also used in the App icon and within the app itself. The shields visible in this README are made possible by [Shields.IO](http://shields.io/).
+> **Status:** version 2.0 is a from-scratch rebuild of the 2016 app *Open Source Selfie Stick* (kept at tag [`v1.0-legacy`](../../tree/v1.0-legacy)). The logic layer is complete and covered by tests; the app compiles for iOS 18–26 but has **not yet been exercised on two physical devices** — see [Status](#status). "Pair &amp; Shoot" is a working title.
 
-__*Special Thanks*__<br>
-Thanks to [Joystick Interactive](https://github.com/joystickinteractive/), [Alex Konrad](https://github.com/alexkonrad), [Ralf Ebert](https://www.ralfebert.de/tutorials/ios-swift-multipeer-connectivity/), [Ray Wenderlich](http://www.raywenderlich.com/), and my wife.<br>Without them this project may not exist.
+## What it does
+
+- **Two roles.** Open the app on both devices. One becomes the **camera**, the other the **remote**.
+- **Pairing with a code.** The camera shows a 4-digit code; the remote types it in. No other device nearby can drive your camera, and the link is encrypted.
+- **Photos and video.** The remote switches modes, cycles the flash, flips between front and back cameras, starts a countdown the people in the shot can see on the camera's screen, takes the picture or starts and stops recording.
+- **Copies where you want them.** The camera keeps its own copies (switchable). The remote can ask for photos to be sent back (default on) and videos (default off — they're big). Every capture sends a small preview to the remote either way, so you always see what you just shot.
+- **Modern camera.** HEIF photos at full sensor resolution, HEVC video with stabilization, horizon-level rotation handling, tap to focus, pinch to zoom, Camera Control / volume-button shutter on the camera device.
+
+## How it works
+
+1. Open Pair &amp; Shoot on both devices and choose **Camera** on one, **Remote** on the other.
+2. On the remote, tap the camera in the list and enter the code on its screen.
+3. Shoot. Photos arrive on the remote in a few seconds over Wi-Fi. Bluetooth works but is slow; the remote says so before it asks for a video.
+
+Both devices need Wi-Fi or Bluetooth on. They do not need to be on the same network — peer-to-peer Wi-Fi works too.
+
+## Building
+
+Requirements: Xcode 26, an iOS 18+ device for each role (the Simulator has no camera; the camera role runs there with generated photos only).
+
+```sh
+git clone https://github.com/RF-Nelson/open-source-selfie-stick.git
+cd open-source-selfie-stick
+open PairAndShoot.xcodeproj      # select your team under Signing & Capabilities, then run on a device
+```
+
+The project file is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen) and committed, so you don't need XcodeGen unless you change `project.yml` (`brew install xcodegen && xcodegen generate`).
+
+Tests live in the Swift package and run without a simulator:
+
+```sh
+cd Packages/PairAndShootCore && swift test
+```
+
+They also run from Xcode's test navigator (the shared scheme includes them).
+
+## Architecture
+
+```
+PairAndShoot/                 the app (SwiftUI, iOS 18+)
+├─ App/                       entry point, role picker, device naming
+├─ Design/                    theme and shared controls (shutter, mode switch, pills, banners)
+├─ Camera/                    CaptureService (AVFoundation actor), preview view, PhotoKit store, camera screen
+└─ Remote/                    remote screen, code entry
+Packages/PairAndShootCore/    everything that doesn't need a device — with tests
+├─ Protocol/                  RemoteCommand / CameraEvent (Codable, versioned) and the JSON codec
+├─ Pairing/                   pairing code, per-session challenge, HMAC proof
+├─ Transport/                 PeerTransport protocol, MultipeerTransport, FakeTransport
+├─ Camera/                    CameraDevice / MediaStore protocols, CameraHostModel (camera-side logic)
+└─ Remote/                    RemoteModel (remote-side logic)
+Tools/render-icon.swift       draws the app icon (light, dark, tinted)
+```
+
+- **Transport is a protocol.** `MultipeerTransport` is the only thing that imports MultipeerConnectivity. It turns the framework's delegate callbacks into one `AsyncStream<TransportEvent>`. Swapping in Network.framework or Wi-Fi Aware later touches nothing above it.
+- **The wire protocol is typed.** Remote → camera is `RemoteCommand`; camera → remote is `CameraEvent`. The camera sends a full `CameraState` snapshot whenever anything changes, and the remote renders from it. Every message carries a protocol version; mismatched versions refuse to talk with a clear message on both screens.
+- **Both role models are pure logic.** `CameraHostModel` and `RemoteModel` talk to a `PeerTransport`, a `CameraDevice` and a `MediaStore`; the app supplies AVFoundation, PhotoKit and Multipeer, the tests supply fakes. `EndToEndTests` drives a remote model against a camera model over two linked fake transports.
+- **Pairing.** The camera advertises a random per-session challenge. The remote's invitation carries `HMAC-SHA256(key: SHA256(code), challenge + remoteName)`. The camera verifies before accepting, allows one remote at a time, and issues a new code after three wrong guesses. The Multipeer session itself is encrypted. This keeps strangers with the app out; it is not designed to resist someone sniffing the local network with custom tooling.
+- **Files.** Photos are sent as the original HEIF/JPEG file (metadata intact). Videos are HEVC `.mov`. Transfers use Multipeer's resource API with progress on both ends; the receiver saves to Photos with add-only permission.
+
+## Status
+
+Done and verified on this machine:
+
+- Core package: 35 tests covering the codec, pairing, both models and the end-to-end flow.
+- App: builds for iOS device and Simulator SDKs under Swift 6 strict concurrency with no warnings.
+
+Not yet done — needs two physical devices:
+
+- Run the pairing flow, capture, video and transfers on real hardware (AVFoundation and Multipeer behaviour can't be tested without them).
+- iPad layout pass, localisation, manual exposure controls, a session gallery, live preview on the remote.
+
+## History
+
+Version 1.0 (2016) was written in Swift 2 against iOS 8 and shipped to the App Store as *Open Source Selfie Stick*. It no longer builds with any current Xcode and would crash on any current iPhone, so 2.0 started from an empty tree, keeping the product idea, the App Store listing and the lessons. The original is preserved at tag `v1.0-legacy`, and the original write-up on Multipeer Connectivity is still a good read: [tutorial](https://gist.github.com/RF-Nelson/8a3e6319b0607cf6b181ae4ee00f6c4c).
+
+## License
+
+[MPL 2.0](LICENSE).
