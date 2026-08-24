@@ -37,10 +37,18 @@ public enum TransportError: Error, Sendable, Equatable {
     case sendFailed(String)
 }
 
+public extension PeerTransport {
+    var requiresAppLevelPairing: Bool { true }
+}
+
 /// Everything the app needs from a peer-to-peer link. `MultipeerTransport` is the real one;
 /// `FakeTransport` stands in for tests and previews. Nothing above this layer imports MultipeerConnectivity.
 public protocol PeerTransport: AnyObject, Sendable {
     var localPeer: Peer { get }
+    /// Whether the app must run its own code-pairing handshake over this transport. Multipeer has no
+    /// system pairing, so it does (true, the default). Wi-Fi Aware pairs devices at the OS level, so
+    /// the app-level challenge/pair is skipped (false).
+    var requiresAppLevelPairing: Bool { get }
     /// Single-consumer stream: exactly one owner iterates it.
     var events: AsyncStream<TransportEvent> { get }
     var connectedPeers: [Peer] { get }
