@@ -120,7 +120,7 @@ private struct HowItWorks: View {
                         .foregroundStyle(.primary)
                 }
             }
-            Text("Works over Wi-Fi or Bluetooth. Photos come back to the remote in a few seconds on Wi-Fi; videos stay on the camera unless you ask for them.")
+            Text("Keep Wi-Fi on for both devices — the same Wi-Fi network is most reliable, and it also works with Wi-Fi on but no network joined. Photos come back to the remote in a few seconds; videos stay on the camera unless you ask for them.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .padding(.top, 4)

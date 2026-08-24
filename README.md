@@ -4,7 +4,7 @@
 # Pair &amp; Shoot
 
 **Turn a second iPhone or iPad into a remote control for another one's camera.**<br>
-Photos and video, over Wi-Fi or Bluetooth, with copies sent back to the remote if you want them.
+Photos and video over Wi-Fi — a shared network, or peer-to-peer with no network — with copies sent back to the remote if you want them.
 
 <img src="https://img.shields.io/badge/platform-iOS%2018%2B-lightgrey.svg?style=flat" alt="iOS 18+"> <img src="https://img.shields.io/badge/swift-6-orange.svg?style=flat" alt="Swift 6"> <img src="https://img.shields.io/badge/license-MPL--2.0-lightgrey.svg?style=flat" alt="MPL 2.0">
 </div>
@@ -23,9 +23,9 @@ Photos and video, over Wi-Fi or Bluetooth, with copies sent back to the remote i
 
 1. Open Pair &amp; Shoot on both devices and choose **Camera** on one, **Remote** on the other.
 2. On the remote, tap the camera in the list and enter the code on its screen.
-3. Shoot. Photos arrive on the remote in a few seconds over Wi-Fi. Bluetooth works but is slow; the remote says so before it asks for a video.
+3. Shoot. Photos arrive on the remote in a few seconds; videos stay on the camera unless you ask for them.
 
-Both devices need Wi-Fi or Bluetooth on. They do not need to be on the same network — peer-to-peer Wi-Fi works too.
+**Keep Wi-Fi on for both devices.** The same Wi-Fi network is most reliable; it also works with Wi-Fi on but no network joined (peer-to-peer Wi-Fi), which is less reliable. It does **not** work over Bluetooth alone: modern iOS carries MultipeerConnectivity's data channel over Wi-Fi (infrastructure or peer-to-peer/AWDL) and only ever used Bluetooth to assist discovery, so with Wi-Fi off there is no data path. See [docs/TRANSPORT.md](docs/TRANSPORT.md).
 
 ## Building
 
@@ -83,6 +83,7 @@ Not yet done — needs two physical devices:
 
 - Run the pairing flow, capture, video and transfers on real hardware (AVFoundation and Multipeer behaviour can't be tested without them).
 - iPad layout pass, localisation, manual exposure controls, a session gallery, live preview on the remote.
+- A Bluetooth-only transport (Core Bluetooth) for shutter control with Wi-Fi off — see [docs/TRANSPORT.md](docs/TRANSPORT.md).
 
 ## History
 

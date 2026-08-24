@@ -51,6 +51,9 @@ public final class RemoteModel {
     @ObservationIgnored private var expectsDisconnect = false
     @ObservationIgnored private var pendingCode: PairingCode?
     @ObservationIgnored private var didReceiveChallenge = false
+    @ObservationIgnored private var reconnectName: String?
+    @ObservationIgnored private var reconnectAttemptsLeft = 0
+    public private(set) var isReconnecting = false
 
     public init(transport: any PeerTransport, mediaStore: any MediaStore, appVersion: String) {
         self.transport = transport
@@ -78,6 +81,9 @@ public final class RemoteModel {
         transport.stopBrowsing()
         transport.disconnect()
         pendingCode = nil
+        reconnectName = nil
+        reconnectAttemptsLeft = 0
+        isReconnecting = false
         connection = .idle
         cameras = []
         camera = nil
@@ -87,12 +93,35 @@ public final class RemoteModel {
     // MARK: Connecting
 
     public func connect(to peer: Peer, code: PairingCode) {
+        // A deliberate connection cancels any in-progress auto-reconnect to a previous camera.
+        isReconnecting = false
+        reconnectName = nil
+        reconnectAttemptsLeft = 0
+        invite(peer, code: code)
+    }
+
+    private func invite(_ peer: Peer, code: PairingCode) {
         pendingCode = code
         didReceiveChallenge = false
         connection = .connecting(peer)
-        // The code is proved over the data channel once connected, so no context here and a longer
-        // timeout for Bluetooth, which is slower to establish a session.
+        // The code is proved over the data channel once connected; no secret in the invitation, and a
+        // longer timeout because peer-to-peer Wi-Fi can be slow to establish.
         transport.invite(peer, context: nil, timeout: 30)
+    }
+
+    private func attemptReconnect() {
+        guard isReconnecting, let name = reconnectName, let code = pendingCode, case .browsing = connection else { return }
+        guard reconnectAttemptsLeft > 0 else {
+            isReconnecting = false
+            reconnectName = nil
+            show("The camera disconnected.")
+            return
+        }
+        guard let peer = cameras.first(where: { $0.displayName == name }) else {
+            return   // wait for the camera to be rediscovered (handled in .peerFound)
+        }
+        reconnectAttemptsLeft -= 1
+        invite(peer, code: code)
     }
 
     public func disconnect() {
@@ -163,6 +192,9 @@ public final class RemoteModel {
             if Pairing.isCompatibleCamera(peer.discoveryInfo) {
                 cameras.append(peer)
             }
+            if isReconnecting, reconnectName == peer.displayName {
+                attemptReconnect()
+            }
         case .peerLost(let peer):
             cameras.removeAll { $0.id == peer.id }
         case .invitation(_, _, let respond):
@@ -177,14 +209,25 @@ public final class RemoteModel {
             guard connection.peer?.id == peer.id else { return }
             let wasPaired = connection.isConnected
             let reachedCamera = didReceiveChallenge
+            let connectionPeerBeforeDrop = connection.peer
             connection = .browsing
             camera = nil
             cameraState = nil
             didReceiveChallenge = false
             if expectsDisconnect {
                 expectsDisconnect = false
-            } else if wasPaired {
-                show("The camera disconnected.")
+                isReconnecting = false
+                reconnectName = nil
+            } else if wasPaired, let peer = connectionPeerBeforeDrop, pendingCode != nil {
+                // A paired session dropped unexpectedly — common on peer-to-peer Wi-Fi. Try to get it
+                // back automatically a few times before telling the user.
+                reconnectName = peer.displayName
+                if !isReconnecting { reconnectAttemptsLeft = 3 }
+                isReconnecting = true
+                attemptReconnect()
+            } else if isReconnecting {
+                // A reconnect attempt failed to connect; try again until the budget runs out.
+                attemptReconnect()
             } else if reachedCamera {
                 // We connected and were challenged, but pairing didn't complete — most likely the code.
                 show("The camera didn't accept the code. Check it and try again.")
@@ -237,6 +280,9 @@ public final class RemoteModel {
         case .hello(let info):
             // The camera accepted our code.
             camera = info
+            isReconnecting = false
+            reconnectName = nil
+            reconnectAttemptsLeft = 0
             if let peer = connection.peer {
                 connection = .connected(peer)
             }

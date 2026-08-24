@@ -171,6 +171,34 @@ import Testing
         #expect(model.notice?.lowercased().contains("wi-fi") == true)
     }
 
+    @Test func pairedDropAutoReconnects() async {
+        let model = await connectedModel()
+        #expect(transport.invitations.count == 1)
+        // An unexpected drop of a paired session (typical of peer-to-peer Wi-Fi).
+        transport.emit(.disconnected(camera))
+        #expect(await waitUntil { model.isReconnecting })
+        #expect(await waitUntil { transport.invitations.count == 2 })   // re-invited automatically
+        #expect(model.notice != "The camera disconnected.")             // not surfaced yet
+        // Complete the handshake again.
+        transport.simulateConnected(camera)
+        transport.emit(.message(try! encodedEvent(.challenge("0123456789abcdef")), from: camera))
+        _ = await waitUntil { transport.sentPairSubmission != nil }
+        transport.emit(.message(try! encodedEvent(.hello(HelloInfo(appVersion: "2.0", displayName: "Cam"))), from: camera))
+        #expect(await waitUntil { model.connection == .connected(camera) && !model.isReconnecting })
+    }
+
+    @Test func autoReconnectGivesUpAfterItsBudget() async {
+        let model = await connectedModel()
+        transport.emit(.disconnected(camera))   // drop 1 -> reconnect attempt 1
+        #expect(await waitUntil { model.isReconnecting && transport.invitations.count == 2 })
+        transport.emit(.disconnected(camera))   // attempt 1 fails -> attempt 2
+        #expect(await waitUntil { transport.invitations.count == 3 })
+        transport.emit(.disconnected(camera))   // attempt 2 fails -> attempt 3
+        #expect(await waitUntil { transport.invitations.count == 4 })
+        transport.emit(.disconnected(camera))   // attempt 3 fails -> budget exhausted
+        #expect(await waitUntil { !model.isReconnecting && model.notice == "The camera disconnected." })
+    }
+
     @Test func versionMismatchDisconnects() async throws {
         let model = await connectedModel()
         var envelope = Envelope(message: .event(.pong))

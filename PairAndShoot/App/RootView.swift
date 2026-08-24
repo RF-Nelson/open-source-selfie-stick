@@ -25,11 +25,15 @@ struct RootView: View {
                 .environment(photoAccess)
             }
             .task {
-                await photoAccess.requestIfNeeded()
-                // Ask for the microphone up front too, so it never interrupts the first video recording.
+                // Ask for everything the app needs up front, so no prompt interrupts the first
+                // capture: camera, then microphone (for video), then the photo library.
+                if AVCaptureDevice.authorizationStatus(for: .video) == .notDetermined {
+                    _ = await AVCaptureDevice.requestAccess(for: .video)
+                }
                 if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
                     _ = await AVCaptureDevice.requestAccess(for: .audio)
                 }
+                await photoAccess.requestIfNeeded()
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { photoAccess.refresh() }
