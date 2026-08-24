@@ -38,3 +38,46 @@ throughput: BLE moves only a few KB/s, so photo/video **send-back would be impra
 would have to stay on the camera (which the app already supports). Scope: a new
 `BluetoothTransport`, a small chunking layer for messages, and a transport picker in the UI. Not
 built yet; tracked here pending a decision.
+
+## Wi-Fi Aware transport — implementation design (iOS 26+)
+
+Verified against the iOS 26.5 SDK (`WiFiAware` + the new Swift `Network` API). Entitlement
+`com.apple.developer.wifi-aware` (values `Publish`,`Subscribe`) is self-serve (no Apple approval),
+enabled on the App ID; `WiFiAwareServices` declared in Info.plist (`_pairandshoot._udp`).
+
+**Data channel.** Use the new Swift Network API with a Codable message protocol — no manual framing:
+
+```
+// ApplicationProtocol: JSON-coded frames over TCP
+Coder(WAFrame.self, using: .json) { TCP() }
+// send:    try await connection.send(frame)          // frame: WAFrame (Codable)
+// receive: for try await m in connection.messages { handle(m.content) }
+```
+
+`WAFrame` is a transport-level enum carrying opaque app messages and file transfer:
+`case message(Data)`, `case fileBegin(id,name,size)`, `case fileChunk(id,Data)`, `case fileEnd(id)`.
+(Chunks are base64 in JSON — fine for v1 over fast Wi-Fi Aware; a binary `Framer` can optimise later.)
+
+**Roles → Network API:**
+- Camera (`startAdvertising`) → `NetworkListener(for: .wifiAware(.connecting(to: WAPublishableService, from: .allPairedDevices))) { Coder… }`, then `listener.run { connection in … }` — each incoming connection is a remote.
+- Remote (`startBrowsing`) → `NetworkBrowser(for: .wifiAware(.connecting(to: .allPairedDevices, from: WASubscribableService)))`, `browser.run { endpoints in … }` → emit `.peerFound` per `WAEndpoint`.
+- Remote `invite(peer)` → `NetworkConnection(to: waEndpoint) { Coder… }.start()`; on `.ready` emit `.connected`, start the receive loop.
+- Peer identity: `WAEndpoint.device` (`WAPairedDevice`, id: UInt64, name) → our `Peer`.
+
+**Key integration point — pairing is system-level.** Wi-Fi Aware devices must be paired by the OS
+first (persistent `WAPairedDevice`); there is no in-app PIN. So on this path our 4-digit
+challenge/pair handshake must be SKIPPED — the camera accepts the connection and goes straight to
+`connected`. Add `PeerTransport.requiresAppLevelPairing` (Multipeer: true, Wi-Fi Aware: false);
+`CameraHostModel`/`RemoteModel` skip the challenge/pair and treat a Wi-Fi Aware connection as paired
+(camera sends hello+state immediately; remote is paired on hello). The system pairing UI itself is
+presented with `DeviceDiscoveryUI` (a device picker) the first time — requires the "Device Discovery
+Pairing Access" capability; pairing then persists.
+
+**Transport selection:** a factory picks `WiFiAwareTransport` when `#available(iOS 26)` AND
+`WACapabilities.supportedFeatures.contains(.wifiAware)`, else `MultipeerTransport`. Both phones must
+be on iOS 26 to use Wi-Fi Aware; a mixed pair uses Multipeer (and needs Wi-Fi, per the table above).
+
+**Build order:** (1) `WAFrame` + `WiFiAwareTransport` conforming to `PeerTransport` (compile);
+(2) `requiresAppLevelPairing` + model skip-pairing; (3) transport-selection factory in the app;
+(4) `DeviceDiscoveryUI` pairing screen; (5) on-device test between the two iOS 26 phones.
+Steps 1–3 compile and unit-test on this Mac; 4–5 need the devices.
