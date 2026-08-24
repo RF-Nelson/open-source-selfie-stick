@@ -42,9 +42,13 @@ struct ControlButton: View {
                         .offset(x: 4, y: 2)
                 }
             }
+            .modifier(GlassBackground())
+            // The visible control stays 48pt; the extra padding widens the tap target to ~56pt so
+            // it isn't easy to miss (the close button especially, sitting over the live preview).
+            .padding(4)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .modifier(GlassBackground())
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.35)
         .accessibilityLabel(label)

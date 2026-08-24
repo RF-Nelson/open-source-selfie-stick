@@ -8,6 +8,7 @@ final class CameraStack {
     let model: CameraHostModel
     let preview: PreviewSource?
     let capture: CaptureService?
+    let previewController = PreviewController()
 
     init() {
         let transport = MultipeerTransport(displayName: DeviceIdentity.displayName)
@@ -74,19 +75,22 @@ struct CameraScreen: View {
         let state = model.state
         ZStack {
             if let preview = stack.preview {
-                CameraPreviewView(source: preview, position: state.position) { point in
-                    Task { await stack.capture?.focus(at: point) }
-                }
-                .ignoresSafeArea()
-                .gesture(
-                    MagnifyGesture()
-                        .onChanged { value in
-                            Task { await stack.capture?.setZoom(zoomBase * value.magnification) }
+                CameraPreviewView(source: preview, position: state.position, controller: stack.previewController)
+                    .ignoresSafeArea()
+                    .onTapGesture(coordinateSpace: .local) { location in
+                        if let devicePoint = stack.previewController.focus(at: location) {
+                            Task { await stack.capture?.focus(at: devicePoint) }
                         }
-                        .onEnded { _ in
-                            Task { zoomBase = await stack.capture?.zoomFactor ?? 1 }
-                        }
-                )
+                    }
+                    .gesture(
+                        MagnifyGesture()
+                            .onChanged { value in
+                                Task { await stack.capture?.setZoom(zoomBase * value.magnification) }
+                            }
+                            .onEnded { _ in
+                                Task { zoomBase = await stack.capture?.zoomFactor ?? 1 }
+                            }
+                    )
             } else {
                 SimulatedPreview()
             }
@@ -200,6 +204,8 @@ struct CameraScreen: View {
             }
             .padding(.horizontal, 8)
         }
+        .frame(maxWidth: 520)
+        .frame(maxWidth: .infinity)
     }
 
     private func shutter(_ model: CameraHostModel) {

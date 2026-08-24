@@ -39,6 +39,8 @@ struct RolePickerView: View {
                 HowItWorks()
             }
             .padding(24)
+            .frame(maxWidth: 600)
+            .frame(maxWidth: .infinity)
         }
         .background(Color(.systemGroupedBackground))
     }

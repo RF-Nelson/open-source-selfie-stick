@@ -216,6 +216,8 @@ private struct ControlDeck: View {
                 .padding(.bottom, 12)
         }
         .padding(.horizontal, 24)
+        .frame(maxWidth: 480)
+        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
