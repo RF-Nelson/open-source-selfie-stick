@@ -36,5 +36,15 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>WiFiAwareServices</key>
+	<dict>
+		<key>_pairandshoot._udp</key>
+		<dict>
+			<key>Publishable</key>
+			<true/>
+			<key>Subscribable</key>
+			<true/>
+		</dict>
+	</dict>
 </dict>
 </plist>

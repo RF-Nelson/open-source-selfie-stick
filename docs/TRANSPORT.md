@@ -10,7 +10,8 @@ Confirmed on hardware (iPhone 17 Pro Max + a second iPhone, iOS 26), 23 Aug 2026
 | Both devices' network | Pairing & control | Notes |
 |---|---|---|
 | Same Wi-Fi network | **Reliable** | The intended setup. Photos/video, flash, timer, send-back all work. |
-| Wi-Fi **on**, no network joined (peer-to-peer / AWDL) | **Works, but flaky** | Connects sometimes; can drop mid-session. The app now auto-reconnects a few times. |
+| Personal Hotspot (one phone hosts, the other joins) | **Expected reliable — untested** | Puts both on a real shared subnet with no router; MultipeerConnectivity should behave like same-network. Worth confirming. |
+| Wi-Fi **on**, no network joined (peer-to-peer / AWDL) | **Does not work in practice** | Reached "connected" once, briefly, then dropped; not one photo could be taken. AWDL alone is not usable here. |
 | Wi-Fi **off**, Bluetooth on | **Does not connect** | Discovery happens, but the session never forms. |
 
 ## Why Bluetooth-only fails
@@ -23,8 +24,10 @@ Wi-Fi-off attempt show the session looping `connecting -> notConnected`, with
 `DTLSState=DTLSNotConnected` and flows falling back to cellular — i.e. no usable path, so the
 handshake can't complete. This is an OS limitation, not an app bug.
 
-**Practical guidance:** keep Wi-Fi on for both devices. A shared network is best; Wi-Fi-on-no-network
-works but is less reliable. The app tells users this when a connection can't be established.
+**Practical guidance:** the only confirmed-reliable setup is a **shared Wi-Fi network**. When there
+is no network available, the way to get one without a router is **Personal Hotspot** on one phone,
+joined by the other (a manual toggle — iOS has no API for an app to create a Wi-Fi AP). Relying on
+peer-to-peer Wi-Fi (AWDL) alone did not work in testing, so it should not be presented as an option.
 
 ## If true Bluetooth-only is required (future work)
 

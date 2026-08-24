@@ -28,6 +28,8 @@ targets:
     dependencies:
       - package: PairAndShootCore
         product: PairAndShootCore
+    entitlements:
+      path: PairAndShoot/PairAndShoot.entitlements
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.richardnelson.opensourceselfiestick

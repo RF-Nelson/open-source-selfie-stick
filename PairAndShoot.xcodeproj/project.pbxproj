@@ -43,6 +43,7 @@
 		7196A6483C8BB5E464937FA9 /* CaptureDelegates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureDelegates.swift; sourceTree = "<group>"; };
 		80E698D64E989B5F69F08811 /* CaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureService.swift; sourceTree = "<group>"; };
 		932FB559753841B7B772F9FB /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
+		9A57E877517EBF6436EACBDD /* PairAndShoot.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PairAndShoot.entitlements; sourceTree = "<group>"; };
 		B3C45F3CF5FA5AF83A27D70F /* PhotoKitMediaStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoKitMediaStore.swift; sourceTree = "<group>"; };
 		BE6D35B2B90DBCDF4AF8E94C /* PairAndShoot.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = PairAndShoot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E52D9C630BE44803890CCB22 /* SimulatedCameraDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatedCameraDevice.swift; sourceTree = "<group>"; };
@@ -73,6 +74,7 @@
 			isa = PBXGroup;
 			children = (
 				4E1D4583DEC16A70D740F91D /* Assets.xcassets */,
+				9A57E877517EBF6436EACBDD /* PairAndShoot.entitlements */,
 				C04AC65E402EFAE43AB12EF1 /* App */,
 				ACA05A340FE5C70F665F9187 /* Camera */,
 				7C2B282D13799943D8E11F46 /* Design */,
@@ -245,6 +247,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = PairAndShoot/PairAndShoot.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
@@ -332,6 +335,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = PairAndShoot/PairAndShoot.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
