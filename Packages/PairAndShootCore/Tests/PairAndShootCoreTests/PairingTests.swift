@@ -54,12 +54,13 @@ import Testing
         #expect(Pairing.verify(context: Data("junk".utf8), code: code, challenge: challenge) == .rejected(.malformedContext))
     }
 
-    @Test func discoveryInfoRoundTrips() {
-        let info = Pairing.discoveryInfo(for: challenge)
-        #expect(Pairing.challenge(from: info) == challenge)
-        #expect(Pairing.challenge(from: nil) == nil)
-        #expect(Pairing.challenge(from: ["app": "other", "v": "1", "n": "x"]) == nil)
-        #expect(Pairing.challenge(from: ["app": Pairing.appTag, "v": "99", "n": "x"]) == nil)
+    @Test func advertisingInfoIsRecognised() {
+        let info = Pairing.advertisingInfo()
+        #expect(Pairing.isCompatibleCamera(info))
+        // Bluetooth may drop discovery info entirely; a peer on our service type is still a candidate.
+        #expect(Pairing.isCompatibleCamera(nil))
+        #expect(!Pairing.isCompatibleCamera(["app": "something-else"]))
+        #expect(!Pairing.isCompatibleCamera(["app": Pairing.appTag, "v": "99"]))
     }
 
     @Test func challengesAreUnique() {

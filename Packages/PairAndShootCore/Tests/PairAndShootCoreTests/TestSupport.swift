@@ -14,6 +14,18 @@ func waitUntil(timeout: Duration = .seconds(3), _ condition: @MainActor () -> Bo
     return condition()
 }
 
+/// Like `waitUntil` but returns the produced value once it is non-nil.
+@MainActor
+func waitUntilValue<T>(timeout: Duration = .seconds(3), _ produce: @MainActor () -> T?) async -> T? {
+    let clock = ContinuousClock()
+    let deadline = clock.now + timeout
+    while clock.now < deadline {
+        if let value = produce() { return value }
+        try? await Task.sleep(for: .milliseconds(5))
+    }
+    return produce()
+}
+
 /// Stands in for `Task.sleep`. In passthrough mode every sleep returns almost immediately;
 /// in gated mode sleeps suspend until `releaseAll()` and honour task cancellation.
 final class FakeSleeper: @unchecked Sendable {
@@ -125,6 +137,27 @@ extension FakeTransport {
         }.last
     }
 
+    var sentChallengeNonce: String? {
+        sentEvents.compactMap {
+            if case .challenge(let nonce) = $0 { return nonce }
+            return nil
+        }.last
+    }
+
+    var didSendHello: Bool {
+        sentEvents.contains {
+            if case .hello = $0 { return true }
+            return false
+        }
+    }
+
+    var sentPairSubmission: PairingSubmission? {
+        sentCommands.compactMap {
+            if case .pair(let submission) = $0 { return submission }
+            return nil
+        }.last
+    }
+
     var sentStates: [CameraState] {
         sentEvents.compactMap {
             if case .state(let state) = $0 { return state }
@@ -141,6 +174,6 @@ func encodedEvent(_ event: CameraEvent) throws -> Data {
     try MessageCodec().encode(.event(event))
 }
 
-func aCamera(id: String = "cam", nonce: String = "0123456789abcdef") -> Peer {
-    Peer(id: id, displayName: "iPhone · A7", discoveryInfo: Pairing.discoveryInfo(for: PairingChallenge(nonce: nonce)))
+func aCamera(id: String = "cam") -> Peer {
+    Peer(id: id, displayName: "iPhone · A7", discoveryInfo: Pairing.advertisingInfo())
 }

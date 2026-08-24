@@ -19,6 +19,10 @@ import Testing
         _ = await waitUntil { model.cameras.count == 1 }
         model.connect(to: camera, code: PairingCode("4821")!)
         transport.simulateConnected(camera)
+        // Camera challenges; remote answers with a pair command; camera accepts by sending hello.
+        transport.emit(.message(try! encodedEvent(.challenge("0123456789abcdef")), from: camera))
+        _ = await waitUntil { transport.sentPairSubmission != nil }
+        transport.emit(.message(try! encodedEvent(.hello(HelloInfo(appVersion: "2.0", displayName: "Cam", capabilities: CameraCapabilities(canRecordVideo: true)))), from: camera))
         _ = await waitUntil { model.connection == .connected(camera) }
         return model
     }
@@ -29,35 +33,40 @@ import Testing
         #expect(model.connection == .browsing)
         transport.emit(.peerFound(camera))
         transport.emit(.peerFound(Peer(id: "printer", displayName: "Printer", discoveryInfo: ["app": "other"])))
-        transport.emit(.peerFound(Peer(id: "old", displayName: "Old app", discoveryInfo: nil)))
-        #expect(await waitUntil { model.cameras.map(\.id) == ["cam"] })
+        transport.emit(.peerFound(Peer(id: "nodisc", displayName: "No info", discoveryInfo: nil)))
+        // "printer" advertises a different app and is filtered; a peer with no discovery info is a
+        // candidate (Bluetooth often omits it).
+        #expect(await waitUntil { model.cameras.map(\.id).sorted() == ["cam", "nodisc"] })
         transport.emit(.peerLost(camera))
-        #expect(await waitUntil { model.cameras.isEmpty })
+        #expect(await waitUntil { model.cameras.map(\.id) == ["nodisc"] })
     }
 
-    @Test func connectSendsAVerifiableProof() async throws {
+    @Test func connectInvitesThenProvesOverTheChannel() async throws {
         let model = makeModel()
         model.connect(to: camera, code: PairingCode("4821")!)
         #expect(model.connection == .connecting(camera))
         let invitation = try #require(transport.invitations.first)
         #expect(invitation.peer.id == "cam")
-        let verdict = Pairing.verify(context: invitation.context, code: PairingCode("4821")!, challenge: PairingChallenge(nonce: "0123456789abcdef"))
+        #expect(invitation.context == nil)   // no secret in the invitation any more
+
+        transport.simulateConnected(camera)
+        transport.emit(.message(try encodedEvent(.challenge("0123456789abcdef")), from: camera))
+        let submission = try #require(await waitUntilValue { transport.sentPairSubmission })
+        let verdict = Pairing.verify(context: submission.proof, code: PairingCode("4821")!, challenge: PairingChallenge(nonce: "0123456789abcdef"))
         #expect(verdict == .accepted(remoteName: "Remote"))
+        #expect(model.connection == .connecting(camera))   // not connected until the camera says hello
     }
 
-    @Test func connectingSendsHelloAndMirrorsCameraState() async throws {
+    @Test func pairingProvesTheCodeAndMirrorsState() async throws {
         let model = await connectedModel()
-        guard case .hello(let hello)? = transport.sentCommands.first else {
-            Issue.record("expected a hello, got \(transport.sentCommands)")
-            return
-        }
-        #expect(hello.displayName == "Remote")
-        #expect(hello.protocolVersion == WireProtocol.version)
+        let submission = try #require(transport.sentPairSubmission)
+        #expect(submission.displayName == "Remote")
+        #expect(submission.protocolVersion == WireProtocol.version)
+        #expect(model.camera?.capabilities?.canRecordVideo == true)
 
         let state = CameraState(mode: .video, flash: .on, keepsCopies: false)
         transport.emit(.message(try encodedEvent(.state(state)), from: camera))
-        transport.emit(.message(try encodedEvent(.hello(HelloInfo(appVersion: "2.0", displayName: "Cam", capabilities: CameraCapabilities(canRecordVideo: true)))), from: camera))
-        #expect(await waitUntil { model.cameraState == state && model.camera?.capabilities?.canRecordVideo == true })
+        #expect(await waitUntil { model.cameraState == state })
     }
 
     @Test func shutterSendsTheRightCommandForEachState() async throws {
@@ -126,10 +135,25 @@ import Testing
         #expect(model.notice == "Photo saved on the camera.")
     }
 
-    @Test func declinedInvitationExplainsItself() async {
+    @Test func rejectedCodeShowsTheCameraReason() async {
         let model = makeModel()
+        transport.emit(.peerFound(camera))
+        _ = await waitUntil { model.cameras.count == 1 }
         model.connect(to: camera, code: PairingCode("0000")!)
+        transport.simulateConnected(camera)
+        transport.emit(.message(try! encodedEvent(.rejected(reason: "The code didn't match. Check the code on the camera and try again.")), from: camera))
         transport.emit(.disconnected(camera))
+        #expect(await waitUntil { model.connection == .browsing })
+        #expect(model.notice?.contains("didn't match") == true)
+    }
+
+    @Test func silentDisconnectWhileConnectingStillExplainsItself() async {
+        let model = makeModel()
+        transport.emit(.peerFound(camera))
+        _ = await waitUntil { model.cameras.count == 1 }
+        model.connect(to: camera, code: PairingCode("0000")!)
+        transport.simulateConnected(camera)
+        transport.emit(.disconnected(camera))   // no rejected event arrived (e.g. lost)
         #expect(await waitUntil { model.connection == .browsing })
         #expect(model.notice?.contains("didn't accept") == true)
     }

@@ -7,7 +7,7 @@ import Testing
 
     @Test func roundTripsEveryCommand() throws {
         let commands: [RemoteCommand] = [
-            .hello(HelloInfo(appVersion: "2.0", displayName: "Remote")),
+            .pair(PairingSubmission(proof: Data([1, 2, 3, 4]), displayName: "Remote", appVersion: "2.0")),
             .capturePhoto(sendBack: true, delay: 3),
             .startRecording(sendBack: false, delay: 0),
             .stopRecording, .cancelCountdown,
@@ -23,6 +23,7 @@ import Testing
         let result = CaptureResult(kind: .photo, byteCount: 1234, willSendFile: true, fileName: "IMG_1.heic",
                                    thumbnailJPEG: Data([0xFF, 0xD8]), capturedAt: Date(timeIntervalSince1970: 1_700_000_000))
         let events: [CameraEvent] = [
+            .challenge("0123456789abcdef"),
             .hello(HelloInfo(appVersion: "2.0", displayName: "Camera", capabilities: CameraCapabilities(hasFlash: true, hasFrontCamera: true, canRecordVideo: true))),
             .state(CameraState(mode: .video, position: .front, flash: .on, isRecording: true, recordingDuration: 12.5, countdown: 2, isBusy: true, keepsCopies: false)),
             .captureFinished(result),
@@ -48,7 +49,7 @@ import Testing
             try codec.decode(Data("not json".utf8))
         }
         #expect(throws: MessageCodecError.malformed) {
-            try codec.decode(Data("{\"version\":1,\"message\":{\"command\":{\"teleport\":{}}}}".utf8))
+            try codec.decode(Data("{\"version\":2,\"message\":{\"command\":{\"teleport\":{}}}}".utf8))
         }
     }
 

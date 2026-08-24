@@ -60,8 +60,10 @@ public final class CameraHostModel {
     @ObservationIgnored private let codec = MessageCodec()
     @ObservationIgnored private let appVersion: String
     @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
-    @ObservationIgnored private var challenge = PairingChallenge.random()
+    @ObservationIgnored private var currentChallenge = PairingChallenge.random()
     @ObservationIgnored private var failedAttempts = 0
+    @ObservationIgnored private var isPaired = false
+    @ObservationIgnored private var pairingTimeoutTask: Task<Void, Never>?
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var captureTask: Task<Void, Never>?
     @ObservationIgnored private var recordingTicker: Task<Void, Never>?
@@ -107,6 +109,7 @@ public final class CameraHostModel {
     public func stop() async {
         captureTask?.cancel()
         recordingTicker?.cancel()
+        pairingTimeoutTask?.cancel()
         eventTask?.cancel()
         eventTask = nil
         transport.stopAdvertising()
@@ -143,17 +146,15 @@ public final class CameraHostModel {
     }
 
     private func execute(_ command: RemoteCommand) async {
+        if case .pair(let submission) = command {
+            await handlePairing(submission)
+            return
+        }
+        // Ignore every control command until the remote has proved it knows the code.
+        guard isPaired else { return }
         switch command {
-        case .hello(let info):
-            guard case .connected(let peer, _) = link else { return }
-            if info.protocolVersion == WireProtocol.version {
-                link = .connected(peer, info)
-            } else {
-                send(.rejected(reason: "The remote is running a different version of the app."))
-                show("The remote is running a different version of the app. Update both devices.")
-                expectsDisconnect = true
-                transport.disconnect()
-            }
+        case .pair:
+            break
         case .capturePhoto(let sendBack, let delay):
             startCapture { await self.capturePhoto(sendBack: sendBack, delay: delay) }
         case .startRecording(let sendBack, let delay):
@@ -176,6 +177,51 @@ public final class CameraHostModel {
             await update { $0.flash = flash }
         case .ping:
             send(.pong)
+        }
+    }
+
+    private func handlePairing(_ submission: PairingSubmission) async {
+        guard case .connected(let peer, _) = link, !isPaired else { return }
+        guard submission.protocolVersion == WireProtocol.version else {
+            send(.rejected(reason: "The other device is running a different version of the app. Update both."))
+            expectsDisconnect = true
+            transport.disconnect()
+            return
+        }
+        switch Pairing.verify(context: submission.proof, code: pairingCode, challenge: currentChallenge) {
+        case .accepted:
+            isPaired = true
+            failedAttempts = 0
+            pairingTimeoutTask?.cancel()
+            pairingTimeoutTask = nil
+            link = .connected(peer, HelloInfo(protocolVersion: submission.protocolVersion,
+                                              appVersion: submission.appVersion,
+                                              displayName: submission.displayName))
+            send(.hello(HelloInfo(appVersion: appVersion, displayName: transport.localPeer.displayName, capabilities: capabilities)))
+            broadcastState()
+        case .rejected:
+            failedAttempts += 1
+            let rotate = failedAttempts >= Self.maxFailedAttempts
+            send(.rejected(reason: "The code didn't match. Check the code on the camera and try again."))
+            if rotate {
+                pairingCode = .random()
+                failedAttempts = 0
+                show("Too many wrong codes. A new code has been issued.")
+            }
+            expectsDisconnect = true
+            transport.disconnect()
+        }
+    }
+
+    private func startPairingTimeout() {
+        // Real time on purpose: a safety net that frees the single connection slot if a peer connects
+        // but never completes pairing. It must not use the injectable countdown clock.
+        pairingTimeoutTask?.cancel()
+        pairingTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(15))
+            guard let self, !Task.isCancelled, !self.isPaired, self.link.isConnected else { return }
+            self.expectsDisconnect = true
+            self.transport.disconnect()
         }
     }
 
@@ -333,43 +379,37 @@ public final class CameraHostModel {
 
     private func handle(_ event: TransportEvent) {
         switch event {
-        case .invitation(let peer, let context, let respond):
+        case .invitation(let peer, _, let respond):
+            // Accept one remote at a time; the code is verified over the encrypted channel after
+            // connecting (reliable over Bluetooth, unlike discovery info and the invitation context).
             guard case .none = link else {
                 respond(false)
                 return
             }
-            switch Pairing.verify(context: context, code: pairingCode, challenge: challenge) {
-            case .accepted:
-                link = .connecting(peer)
-                respond(true)
-            case .rejected:
-                respond(false)
-                failedAttempts += 1
-                if failedAttempts >= Self.maxFailedAttempts {
-                    pairingCode = .random()
-                    failedAttempts = 0
-                    advertise()
-                    show("Too many wrong codes. A new code has been issued.")
-                }
-            }
+            link = .connecting(peer)
+            respond(true)
         case .connecting(let peer):
             if case .none = link { link = .connecting(peer) }
         case .connected(let peer):
             guard link.peer == nil || link.peer?.id == peer.id else { return }
             link = .connected(peer, nil)
-            failedAttempts = 0
+            isPaired = false
             transport.stopAdvertising()
-            send(.hello(HelloInfo(appVersion: appVersion, displayName: transport.localPeer.displayName, capabilities: capabilities)))
-            broadcastState()
+            currentChallenge = .random()
+            send(.challenge(currentChallenge.nonce))
+            startPairingTimeout()
         case .disconnected(let peer):
             guard link.peer?.id == peer.id else { return }
-            let wasConnected = link.isConnected
+            let wasPaired = isPaired
+            isPaired = false
+            pairingTimeoutTask?.cancel()
+            pairingTimeoutTask = nil
             link = .none
             if state.countdown != nil { captureTask?.cancel() }
             if availability == .ready { advertise() }
             if expectsDisconnect {
                 expectsDisconnect = false
-            } else if wasConnected {
+            } else if wasPaired {
                 show("The remote disconnected.")
             }
         case .message(let data, let peer):
@@ -406,8 +446,7 @@ public final class CameraHostModel {
     // MARK: Helpers
 
     private func advertise() {
-        challenge = .random()
-        transport.startAdvertising(discoveryInfo: Pairing.discoveryInfo(for: challenge))
+        transport.startAdvertising(discoveryInfo: Pairing.advertisingInfo())
     }
 
     private func send(_ event: CameraEvent) {

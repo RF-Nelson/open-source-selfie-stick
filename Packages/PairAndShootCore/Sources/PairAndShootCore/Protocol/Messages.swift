@@ -3,7 +3,7 @@ import Foundation
 /// Facts about the wire protocol that both roles must agree on.
 public enum WireProtocol {
     /// Bump when a change breaks older peers. Peers with a different version refuse to talk.
-    public static let version = 1
+    public static let version = 2
     /// Bonjour service type used for discovery: 1–15 characters, lowercase letters, digits, hyphens.
     public static let serviceType = "pairandshoot"
     /// The entries the app must declare under `NSBonjourServices` in Info.plist.
@@ -55,6 +55,21 @@ public struct HelloInfo: Codable, Sendable, Hashable {
         self.appVersion = appVersion
         self.displayName = displayName
         self.capabilities = capabilities
+    }
+}
+
+/// The remote's answer to the camera's pairing challenge, sent over the encrypted data channel.
+public struct PairingSubmission: Codable, Sendable, Hashable {
+    public var proof: Data
+    public var displayName: String
+    public var appVersion: String
+    public var protocolVersion: Int
+
+    public init(proof: Data, displayName: String, appVersion: String, protocolVersion: Int = WireProtocol.version) {
+        self.proof = proof
+        self.displayName = displayName
+        self.appVersion = appVersion
+        self.protocolVersion = protocolVersion
     }
 }
 
@@ -119,7 +134,8 @@ public struct CaptureResult: Codable, Sendable, Hashable, Identifiable {
 
 /// Remote → camera.
 public enum RemoteCommand: Codable, Sendable, Hashable {
-    case hello(HelloInfo)
+    /// The remote proves it knows the pairing code (in answer to `CameraEvent.challenge`).
+    case pair(PairingSubmission)
     case capturePhoto(sendBack: Bool, delay: Int)
     case startRecording(sendBack: Bool, delay: Int)
     case stopRecording
@@ -132,6 +148,9 @@ public enum RemoteCommand: Codable, Sendable, Hashable {
 
 /// Camera → remote.
 public enum CameraEvent: Codable, Sendable, Hashable {
+    /// Sent right after connecting: a per-connection nonce the remote must sign with the code.
+    case challenge(String)
+    /// Sent once the remote's code is accepted; carries the camera's capabilities.
     case hello(HelloInfo)
     case state(CameraState)
     case captureFinished(CaptureResult)

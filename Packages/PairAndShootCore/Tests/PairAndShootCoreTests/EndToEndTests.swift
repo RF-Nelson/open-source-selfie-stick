@@ -18,13 +18,14 @@ import Testing
         #expect(await waitUntil { remote.cameras.count == 1 })
         #expect(remote.cameras[0].displayName == "iPhone · A7")
 
-        // Wrong code first.
+        // Wrong code first: the camera challenges over the channel, rejects the bad proof, and drops us.
         let wrongCode = PairingCode(camera.pairingCode.digits == "0000" ? "0001" : "0000")!
         remote.connect(to: remote.cameras[0], code: wrongCode)
-        #expect(await waitUntil { remote.notice?.contains("didn't accept") == true })
-        #expect(camera.link == .none)
+        #expect(await waitUntil { remote.notice?.lowercased().contains("code") == true })
+        #expect(await waitUntil { camera.link == .none && !remote.connection.isConnected })
 
-        // Right code.
+        // The camera goes back on the air; wait to rediscover it, then pair with the right code.
+        #expect(await waitUntil { !remote.cameras.isEmpty })
         remote.connect(to: remote.cameras.last!, code: camera.pairingCode)
         #expect(await waitUntil { remote.connection.isConnected && camera.link.isConnected })
         #expect(await waitUntil { remote.camera?.capabilities?.canRecordVideo == true && remote.cameraState != nil })

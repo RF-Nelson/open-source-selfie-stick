@@ -49,6 +49,7 @@ public final class RemoteModel {
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
     @ObservationIgnored private var expectsDisconnect = false
+    @ObservationIgnored private var pendingCode: PairingCode?
 
     public init(transport: any PeerTransport, mediaStore: any MediaStore, appVersion: String) {
         self.transport = transport
@@ -75,6 +76,7 @@ public final class RemoteModel {
         eventTask = nil
         transport.stopBrowsing()
         transport.disconnect()
+        pendingCode = nil
         connection = .idle
         cameras = []
         camera = nil
@@ -84,13 +86,11 @@ public final class RemoteModel {
     // MARK: Connecting
 
     public func connect(to peer: Peer, code: PairingCode) {
-        guard let challenge = Pairing.challenge(from: peer.discoveryInfo) else {
-            show("That camera is running a different version of the app.")
-            return
-        }
-        let proof = Pairing.proof(code: code, challenge: challenge, remoteName: transport.localPeer.displayName)
+        pendingCode = code
         connection = .connecting(peer)
-        transport.invite(peer, context: proof, timeout: 15)
+        // The code is proved over the data channel once connected, so no context here and a longer
+        // timeout for Bluetooth, which is slower to establish a session.
+        transport.invite(peer, context: nil, timeout: 30)
     }
 
     public func disconnect() {
@@ -158,7 +158,7 @@ public final class RemoteModel {
         switch event {
         case .peerFound(let peer):
             cameras.removeAll { $0.id == peer.id }
-            if Pairing.challenge(from: peer.discoveryInfo) != nil {
+            if Pairing.isCompatibleCamera(peer.discoveryInfo) {
                 cameras.append(peer)
             }
         case .peerLost(let peer):
@@ -169,8 +169,8 @@ public final class RemoteModel {
         case .connecting(let peer):
             if case .browsing = connection { connection = .connecting(peer) }
         case .connected(let peer):
-            connection = .connected(peer)
-            send(.hello(HelloInfo(appVersion: appVersion, displayName: transport.localPeer.displayName)))
+            // Stay "connecting" until the camera challenges us and accepts our code.
+            connection = .connecting(peer)
         case .disconnected(let peer):
             guard connection.peer?.id == peer.id else { return }
             let wasConnected = connection.isConnected
@@ -214,8 +214,21 @@ public final class RemoteModel {
         }
         guard case .event(let event) = message else { return }
         switch event {
+        case .challenge(let nonce):
+            guard let code = pendingCode, let peer = connection.peer else { return }
+            let proof = Pairing.proof(code: code, challenge: PairingChallenge(nonce: nonce), remoteName: transport.localPeer.displayName)
+            let submission = PairingSubmission(proof: proof, displayName: transport.localPeer.displayName, appVersion: appVersion)
+            do {
+                try transport.send(try codec.encode(.command(.pair(submission))), to: [peer])
+            } catch {
+                show("Couldn't reach the camera.")
+            }
         case .hello(let info):
+            // The camera accepted our code.
             camera = info
+            if let peer = connection.peer {
+                connection = .connected(peer)
+            }
             if info.protocolVersion != WireProtocol.version {
                 show("The camera is running a different version of the app. Update both devices.")
                 expectsDisconnect = true
@@ -228,7 +241,11 @@ public final class RemoteModel {
             if !result.willSendFile {
                 show(result.kind == .photo ? "Photo saved on the camera." : "Video saved on the camera.")
             }
-        case .captureFailed(let reason), .rejected(let reason):
+        case .captureFailed(let reason):
+            show(reason)
+        case .rejected(let reason):
+            // The camera is about to drop us; show its reason instead of the generic disconnect one.
+            expectsDisconnect = true
             show(reason)
         case .pong:
             break

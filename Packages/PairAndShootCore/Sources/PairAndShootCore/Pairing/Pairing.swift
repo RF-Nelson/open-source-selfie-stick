@@ -65,19 +65,20 @@ public enum Pairing {
         static let nonce = "n"
     }
 
-    /// What the camera advertises. Visible to every browser nearby; contains nothing secret.
-    public static func discoveryInfo(for challenge: PairingChallenge) -> [String: String] {
-        [Keys.app: appTag, Keys.version: String(WireProtocol.version), Keys.nonce: challenge.nonce]
+    /// What the camera advertises. Small and non-secret; the security handshake happens over the
+    /// encrypted data channel after connecting, so this may be dropped (e.g. over Bluetooth) without
+    /// breaking pairing — it only helps the remote recognise a compatible camera.
+    public static func advertisingInfo() -> [String: String] {
+        [Keys.app: appTag, Keys.version: String(WireProtocol.version)]
     }
 
-    /// Extracts the challenge from an advertised peer, or nil if the peer is not a compatible camera.
-    public static func challenge(from discoveryInfo: [String: String]?) -> PairingChallenge? {
-        guard let info = discoveryInfo,
-              info[Keys.app] == appTag,
-              info[Keys.version] == String(WireProtocol.version),
-              let nonce = info[Keys.nonce], !nonce.isEmpty
-        else { return nil }
-        return PairingChallenge(nonce: nonce)
+    /// Whether a discovered peer looks like a compatible camera. Tolerant of missing info, because
+    /// Bluetooth discovery does not always deliver it and the peer is on our service type regardless.
+    public static func isCompatibleCamera(_ discoveryInfo: [String: String]?) -> Bool {
+        guard let info = discoveryInfo else { return true }
+        if let app = info[Keys.app], app != appTag { return false }
+        if let version = info[Keys.version], version != String(WireProtocol.version) { return false }
+        return true
     }
 
     struct Proof: Codable {

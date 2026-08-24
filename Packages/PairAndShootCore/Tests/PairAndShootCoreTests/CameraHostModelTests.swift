@@ -15,18 +15,17 @@ import Testing
         return model
     }
 
-    func validProof(for model: CameraHostModel) -> Data {
-        let challenge = Pairing.challenge(from: transport.advertisedInfo)!
-        return Pairing.proof(code: model.pairingCode, challenge: challenge, remoteName: "Remote")
-    }
-
-    func connectedModel() async -> CameraHostModel {
+    /// Drives the full data-channel handshake with the right code and returns once paired.
+    func connectedModel(code: PairingCode? = nil) async -> CameraHostModel {
         let model = await makeModel()
         let answers = Answers()
-        transport.emit(.invitation(from: remote, context: validProof(for: model), respond: answers.record))
+        transport.emit(.invitation(from: remote, context: nil, respond: answers.record))
         _ = await waitUntil { answers.values == [true] }
         transport.simulateConnected(remote)
-        _ = await waitUntil { model.link.isConnected }
+        let nonce = await waitUntilValue { transport.sentChallengeNonce }!
+        let proof = Pairing.proof(code: code ?? model.pairingCode, challenge: PairingChallenge(nonce: nonce), remoteName: "Remote")
+        transport.emit(.message(try! encodedCommand(.pair(PairingSubmission(proof: proof, displayName: "Remote", appVersion: "2.0"))), from: remote))
+        _ = await waitUntil { transport.didSendHello }
         return model
     }
 
@@ -34,11 +33,11 @@ import Testing
         transport.emit(.message(try encodedCommand(command), from: remote))
     }
 
-    @Test func startsAdvertisingAChallenge() async throws {
+    @Test func startsAdvertising() async throws {
         let model = await makeModel()
         #expect(model.availability == .ready)
         #expect(transport.isAdvertising)
-        #expect(Pairing.challenge(from: transport.advertisedInfo) != nil)
+        #expect(Pairing.isCompatibleCamera(transport.advertisedInfo))
         #expect(device.appliedSettings == CameraSettings())
         #expect(model.capabilities.canRecordVideo)
     }
@@ -50,45 +49,68 @@ import Testing
         #expect(!transport.isAdvertising)
     }
 
-    @Test func wrongCodesAreRefusedAndTheCodeRotatesAfterThree() async {
-        let model = await makeModel()
-        let firstChallenge = transport.advertisedInfo
+    /// One wrong-code attempt: connect, get challenged, send a bad proof, get rejected + disconnected.
+    func attemptWrongCode(_ model: CameraHostModel) async {
         let answers = Answers()
-        for _ in 0..<2 {
-            transport.emit(.invitation(from: remote, context: Data("junk".utf8), respond: answers.record))
-        }
-        #expect(await waitUntil { answers.values == [false, false] })
-        #expect(transport.advertisedInfo == firstChallenge)
-        #expect(model.link == .none)
+        transport.emit(.invitation(from: remote, context: nil, respond: answers.record))
+        _ = await waitUntil { answers.values.count == 1 }
+        guard answers.values == [true] else { return }   // refused outright (already linked)
+        transport.simulateConnected(remote)
+        _ = await waitUntilValue { transport.sentChallengeNonce }
+        transport.emit(.message(try! encodedCommand(.pair(PairingSubmission(proof: Data("junk".utf8), displayName: "Remote", appVersion: "2.0"))), from: remote))
+        _ = await waitUntil { model.link == .none }        // camera disconnects on a wrong code
+        transport.simulateDisconnected(remote)
+        _ = await waitUntil { transport.isAdvertising }
+    }
 
-        transport.emit(.invitation(from: remote, context: Data("junk".utf8), respond: answers.record))
-        #expect(await waitUntil { answers.values == [false, false, false] })
-        #expect(await waitUntil { transport.advertisedInfo != firstChallenge })
+    @Test func wrongCodeIsRejectedAndTheCodeRotatesAfterThree() async {
+        let model = await makeModel()
+        let firstCode = model.pairingCode
+        await attemptWrongCode(model)
+        await attemptWrongCode(model)
+        #expect(model.pairingCode == firstCode)
+        await attemptWrongCode(model)
+        #expect(await waitUntil { model.pairingCode != firstCode })
         #expect(model.notice?.contains("new code") == true)
     }
 
     @Test func rightCodeIsAcceptedThenHelloAndStateAreSent() async throws {
         let model = await connectedModel()
         #expect(!transport.isAdvertising)
-        guard case .hello(let hello)? = transport.sentEvents.first else {
-            Issue.record("expected hello first, got \(transport.sentEvents)")
-            return
-        }
+        // A challenge goes out first, then (after a valid proof) a hello carrying capabilities.
+        #expect(transport.sentChallengeNonce != nil)
+        let hello = try #require(transport.sentEvents.compactMap { event -> HelloInfo? in
+            if case .hello(let info) = event { return info }
+            return nil
+        }.last)
         #expect(hello.capabilities == model.capabilities)
         #expect(transport.sentStates.last == model.state)
+        // The link records the remote's identity from its pairing submission.
+        if case .connected(_, let info) = model.link {
+            #expect(info?.displayName == "Remote")
+        } else {
+            Issue.record("expected a connected link, got \(model.link)")
+        }
+    }
 
-        try command(.hello(HelloInfo(appVersion: "2.0", displayName: "Remote")))
-        #expect(await waitUntil {
-            if case .connected(_, let info) = model.link { return info?.displayName == "Remote" }
-            return false
-        })
+    @Test func controlCommandsAreIgnoredUntilPaired() async throws {
+        let model = await makeModel()
+        let answers = Answers()
+        transport.emit(.invitation(from: remote, context: nil, respond: answers.record))
+        _ = await waitUntil { answers.values == [true] }
+        transport.simulateConnected(remote)
+        _ = await waitUntilValue { transport.sentChallengeNonce }
+        // A capture command before pairing must be ignored.
+        try command(.capturePhoto(sendBack: false, delay: 0))
+        try? await Task.sleep(for: .milliseconds(30))
+        #expect(device.photoCount == 0)
     }
 
     @Test func secondRemoteIsRefusedWhileOneIsConnected() async {
         let model = await connectedModel()
         let answers = Answers()
         let intruder = Peer(id: "intruder", displayName: "Someone")
-        transport.emit(.invitation(from: intruder, context: validProof(for: model), respond: answers.record))
+        transport.emit(.invitation(from: intruder, context: nil, respond: answers.record))
         #expect(await waitUntil { answers.values == [false] })
         #expect(model.link.peer?.id == "remote")
     }
@@ -175,11 +197,9 @@ import Testing
         #expect(await waitUntil { transport.sentEvents.last == .pong })
     }
 
-    @Test func disconnectResumesAdvertisingWithANewChallenge() async {
+    @Test func disconnectResumesAdvertising() async {
         let model = await connectedModel()
-        let connectedInfo = transport.advertisedInfo
         transport.simulateDisconnected(remote)
         #expect(await waitUntil { model.link == .none && transport.isAdvertising })
-        #expect(transport.advertisedInfo != connectedInfo)
     }
 }
