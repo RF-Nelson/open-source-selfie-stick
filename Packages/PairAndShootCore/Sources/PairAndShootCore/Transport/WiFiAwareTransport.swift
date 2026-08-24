@@ -177,7 +177,9 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
             self.connection = connection
             self.connectedPeer = peer
         }
-        // Wait until ready, then drive the receive loop.
+        // The devices are already paired at the system level, so treat an adopted connection as
+        // connected and drive the receive loop. (State observation can refine this during testing.)
+        continuation.yield(.connected(peer))
         do {
             for try await message in connection.messages {
                 handle(frame: message.content, from: peer)

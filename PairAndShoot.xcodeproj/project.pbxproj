@@ -12,6 +12,7 @@
 		339605866D864150BCD100EA /* DeviceIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3EC7188830A29B9E1C722700 /* DeviceIdentity.swift */; };
 		55C865FDAC10A41FD212A4F1 /* CameraScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 535611F745F2CFD5E2937961 /* CameraScreen.swift */; };
 		608FE6FE93DC25B71EDCB473 /* PairAndShootApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FF59C934696DDAE58EF30C7 /* PairAndShootApp.swift */; };
+		65ADB37398E629BD36F96F5A /* TransportFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27D114D65798FBFFFDF45164 /* TransportFactory.swift */; };
 		71E4C754029CCFD8429EB91E /* PhotoLibraryAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4ADF9F624F8914AFDF056557 /* PhotoLibraryAccess.swift */; };
 		7A3389F930BE04CCDA6118B4 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 932FB559753841B7B772F9FB /* RootView.swift */; };
 		7CCD0C1657DDDCA667E57D62 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B24D41DA2800CD15E0960C8 /* Theme.swift */; };
@@ -30,6 +31,7 @@
 /* Begin PBXFileReference section */
 		08B74FC25277A90599C000B7 /* RolePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RolePickerView.swift; sourceTree = "<group>"; };
 		1F53CFA3C1A8FAF5061B7452 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
+		27D114D65798FBFFFDF45164 /* TransportFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransportFactory.swift; sourceTree = "<group>"; };
 		2EF4F12F25D57D7D51DE6772 /* PairAndShootCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PairAndShootCore; path = Packages/PairAndShootCore; sourceTree = SOURCE_ROOT; };
 		3B24D41DA2800CD15E0960C8 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		3EC7188830A29B9E1C722700 /* DeviceIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentity.swift; sourceTree = "<group>"; };
@@ -123,6 +125,7 @@
 				4ADF9F624F8914AFDF056557 /* PhotoLibraryAccess.swift */,
 				08B74FC25277A90599C000B7 /* RolePickerView.swift */,
 				932FB559753841B7B772F9FB /* RootView.swift */,
+				27D114D65798FBFFFDF45164 /* TransportFactory.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -236,6 +239,7 @@
 				7A3389F930BE04CCDA6118B4 /* RootView.swift in Sources */,
 				2FDB1ED87D5578A8F280D733 /* SimulatedCameraDevice.swift in Sources */,
 				7CCD0C1657DDDCA667E57D62 /* Theme.swift in Sources */,
+				65ADB37398E629BD36F96F5A /* TransportFactory.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

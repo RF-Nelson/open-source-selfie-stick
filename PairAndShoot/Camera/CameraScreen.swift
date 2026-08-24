@@ -11,7 +11,7 @@ final class CameraStack {
     let previewController = PreviewController()
 
     init() {
-        let transport = MultipeerTransport(displayName: DeviceIdentity.displayName)
+        let transport = TransportFactory.make(displayName: DeviceIdentity.displayName)
         #if targetEnvironment(simulator)
         let device: any CameraDevice = SimulatedCameraDevice()
         preview = nil
@@ -298,6 +298,7 @@ private struct SimulatedPreview: View {
 private struct CameraSettingsSheet: View {
     @Bindable var model: CameraHostModel
     @AppStorage(DeviceIdentity.nicknameKey) private var nickname = ""
+    @AppStorage(TransportFactory.wifiAwarePreferenceKey) private var useWiFiAware = false
     @Environment(\.dismiss) private var dismiss
     @Environment(PhotoLibraryAccess.self) private var photoAccess
 
@@ -328,6 +329,15 @@ private struct CameraSettingsSheet: View {
                     Text("Pairing")
                 } footer: {
                     Text("A new code is issued automatically after three wrong guesses.")
+                }
+                if TransportFactory.wifiAwareSupported {
+                    Section {
+                        Toggle("Use Wi-Fi Aware", isOn: $useWiFiAware)
+                    } header: {
+                        Text("Experimental")
+                    } footer: {
+                        Text("Connect over Wi-Fi Aware instead of Wi-Fi/Bluetooth. Both devices need iOS 26 and must be paired in the system pairing prompt. Applies next time you open the camera.")
+                    }
                 }
                 Section {
                     TextField("Nickname", text: $nickname)

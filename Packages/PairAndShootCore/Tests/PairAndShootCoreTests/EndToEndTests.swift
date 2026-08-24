@@ -87,3 +87,27 @@ import Testing
         #expect(remote.transfer?.phase == .saved)
     }
 }
+
+@Suite @MainActor struct SystemPairedEndToEndTests {
+    @Test func connectsWithoutACodeAndShoots() async throws {
+        // appLevelPairing:false on both — models must skip the 4-digit handshake.
+        let (cameraTransport, remoteTransport) = FakeTransport.linkedPair(cameraName: "iPhone A7", remoteName: "iPad", appLevelPairing: false)
+        let device = FakeCameraDevice()
+        let cameraStore = FakeMediaStore()
+        let remoteStore = FakeMediaStore()
+        let camera = CameraHostModel(transport: cameraTransport, device: device, mediaStore: cameraStore, appVersion: "2.0")
+        let remote = RemoteModel(transport: remoteTransport, mediaStore: remoteStore, appVersion: "2.0")
+
+        await camera.start()
+        remote.start()
+        #expect(remote.requiresCode == false)
+        #expect(await waitUntil { remote.cameras.count == 1 })
+
+        remote.connect(to: remote.cameras.last!)   // no code
+        #expect(await waitUntil { remote.connection.isConnected && camera.link.isConnected && remote.cameraState != nil })
+
+        remote.sendBackPhotos = true
+        remote.shutter()
+        #expect(await waitUntil { remoteStore.photos.count == 1 && camera.captures.count == 1 })
+    }
+}

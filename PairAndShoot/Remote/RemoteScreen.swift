@@ -23,7 +23,7 @@ struct RemoteScreen: View {
         .task {
             UIApplication.shared.isIdleTimerDisabled = true
             let model = self.model ?? RemoteModel(
-                transport: MultipeerTransport(displayName: DeviceIdentity.displayName),
+                transport: TransportFactory.make(displayName: DeviceIdentity.displayName),
                 mediaStore: PhotoKitMediaStore(),
                 appVersion: DeviceIdentity.appVersion
             )
@@ -49,7 +49,13 @@ struct RemoteScreen: View {
             }
             switch model.connection {
             case .idle, .browsing:
-                DiscoveryView(model: model) { codeTarget = $0 }
+                DiscoveryView(model: model) { peer in
+                    if model.requiresCode {
+                        codeTarget = peer
+                    } else {
+                        model.connect(to: peer)   // Wi-Fi Aware: system already paired the devices
+                    }
+                }
             case .connecting(let peer):
                 ConnectingView(peer: peer) { model.disconnect() }
             case .connected:
@@ -280,6 +286,7 @@ private struct ControlDeck: View {
 private struct RemoteSettingsSheet: View {
     @Bindable var model: RemoteModel
     @AppStorage(DeviceIdentity.nicknameKey) private var nickname = ""
+    @AppStorage(TransportFactory.wifiAwarePreferenceKey) private var useWiFiAware = false
     @Environment(\.dismiss) private var dismiss
     @Environment(PhotoLibraryAccess.self) private var photoAccess
 
@@ -322,6 +329,15 @@ private struct RemoteSettingsSheet: View {
                     Text("Name")
                 } footer: {
                     Text("The camera currently sees this device as “\(model.localName)”. A nickname applies the next time you open the remote.")
+                }
+                if TransportFactory.wifiAwareSupported {
+                    Section {
+                        Toggle("Use Wi-Fi Aware", isOn: $useWiFiAware)
+                    } header: {
+                        Text("Experimental")
+                    } footer: {
+                        Text("Connect over Wi-Fi Aware instead of Wi-Fi/Bluetooth. Both devices need iOS 26 and must be paired in the system pairing prompt. Applies next time you open the remote.")
+                    }
                 }
                 if model.connection.isConnected {
                     Section {

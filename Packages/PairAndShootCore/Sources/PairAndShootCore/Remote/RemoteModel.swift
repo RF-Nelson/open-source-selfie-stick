@@ -41,6 +41,9 @@ public final class RemoteModel {
 
     public var lastCapture: CaptureResult? { captures.last }
     public var localName: String { transport.localPeer.displayName }
+    /// Whether the user must enter the camera's 4-digit code (Multipeer). Wi-Fi Aware pairs at the
+    /// system level, so no code is needed and the remote connects directly.
+    public var requiresCode: Bool { transport.requiresAppLevelPairing }
 
     @ObservationIgnored private let transport: any PeerTransport
     @ObservationIgnored private let mediaStore: any MediaStore
@@ -92,7 +95,7 @@ public final class RemoteModel {
 
     // MARK: Connecting
 
-    public func connect(to peer: Peer, code: PairingCode) {
+    public func connect(to peer: Peer, code: PairingCode? = nil) {
         // A deliberate connection cancels any in-progress auto-reconnect to a previous camera.
         isReconnecting = false
         reconnectName = nil
@@ -100,7 +103,7 @@ public final class RemoteModel {
         invite(peer, code: code)
     }
 
-    private func invite(_ peer: Peer, code: PairingCode) {
+    private func invite(_ peer: Peer, code: PairingCode?) {
         pendingCode = code
         didReceiveChallenge = false
         connection = .connecting(peer)
@@ -110,7 +113,7 @@ public final class RemoteModel {
     }
 
     private func attemptReconnect() {
-        guard isReconnecting, let name = reconnectName, let code = pendingCode, case .browsing = connection else { return }
+        guard isReconnecting, let name = reconnectName, case .browsing = connection else { return }
         guard reconnectAttemptsLeft > 0 else {
             isReconnecting = false
             reconnectName = nil
@@ -121,7 +124,7 @@ public final class RemoteModel {
             return   // wait for the camera to be rediscovered (handled in .peerFound)
         }
         reconnectAttemptsLeft -= 1
-        invite(peer, code: code)
+        invite(peer, code: pendingCode)
     }
 
     public func disconnect() {
@@ -218,7 +221,7 @@ public final class RemoteModel {
                 expectsDisconnect = false
                 isReconnecting = false
                 reconnectName = nil
-            } else if wasPaired, let peer = connectionPeerBeforeDrop, pendingCode != nil {
+            } else if wasPaired, let peer = connectionPeerBeforeDrop {
                 // A paired session dropped unexpectedly — common on peer-to-peer Wi-Fi. Try to get it
                 // back automatically a few times before telling the user.
                 reconnectName = peer.displayName

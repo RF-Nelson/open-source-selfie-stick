@@ -85,6 +85,9 @@ Not yet done — needs two physical devices:
 - iPad layout pass, localisation, manual exposure controls, a session gallery, live preview on the remote.
 - A Bluetooth-only transport (Core Bluetooth) for shutter control with Wi-Fi off — see [docs/TRANSPORT.md](docs/TRANSPORT.md).
 
+### TODO
+- [ ] Test a Bluetooth-only remote-control mode: shutter/controls over Bluetooth with Wi-Fi off (Core Bluetooth transport; media stays on the camera since BLE is too slow to transfer photos/video). See [docs/TRANSPORT.md](docs/TRANSPORT.md).
+
 ## History
 
 Version 1.0 (2016) was written in Swift 2 against iOS 8 and shipped to the App Store as *Open Source Selfie Stick*. It no longer builds with any current Xcode and would crash on any current iPhone, so 2.0 started from an empty tree, keeping the product idea, the App Store listing and the lessons. The original is preserved at tag `v1.0-legacy`, and the original write-up on Multipeer Connectivity is still a good read: [tutorial](https://gist.github.com/RF-Nelson/8a3e6319b0607cf6b181ae4ee00f6c4c).

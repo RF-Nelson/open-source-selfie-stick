@@ -93,6 +93,20 @@ import Testing
         }
     }
 
+    @Test func systemPairedTransportSkipsTheCodeHandshake() async throws {
+        // A transport that pairs at the OS level (Wi-Fi Aware): no challenge, immediate readiness.
+        let wa = FakeTransport(displayName: "iPhone A7", appLevelPairing: false)
+        let model = CameraHostModel(transport: wa, device: device, mediaStore: store, appVersion: "2.0", sleep: sleeper.sleep)
+        await model.start()
+        wa.emit(.connected(remote))
+        #expect(await waitUntil { wa.didSendHello })
+        #expect(wa.sentChallengeNonce == nil)                 // no code handshake
+        if case .connected = model.link {} else { Issue.record("expected connected link, got \(model.link)") }
+        // Paired immediately: a capture command works with no code exchanged.
+        wa.emit(.message(try! encodedCommand(.capturePhoto(sendBack: false, delay: 0)), from: remote))
+        #expect(await waitUntil { device.photoCount == 1 })
+    }
+
     @Test func controlCommandsAreIgnoredUntilPaired() async throws {
         let model = await makeModel()
         let answers = Answers()

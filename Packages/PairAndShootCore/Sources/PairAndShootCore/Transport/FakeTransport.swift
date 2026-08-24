@@ -35,8 +35,12 @@ public final class FakeTransport: PeerTransport, @unchecked Sendable {
     private var _connected: [Peer] = []
     private weak var link: FakeTransport?
 
-    public init(displayName: String, id: String = UUID().uuidString) {
+    private let _requiresAppLevelPairing: Bool
+    public var requiresAppLevelPairing: Bool { _requiresAppLevelPairing }
+
+    public init(displayName: String, id: String = UUID().uuidString, appLevelPairing: Bool = true) {
         localPeer = Peer(id: id, displayName: displayName)
+        _requiresAppLevelPairing = appLevelPairing
         (events, continuation) = AsyncStream.makeStream(of: TransportEvent.self, bufferingPolicy: .unbounded)
     }
 
@@ -167,9 +171,9 @@ public final class FakeTransport: PeerTransport, @unchecked Sendable {
     // MARK: Linking
 
     /// Two transports that can see each other, as if on the same network.
-    public static func linkedPair(cameraName: String = "Camera", remoteName: String = "Remote") -> (camera: FakeTransport, remote: FakeTransport) {
-        let camera = FakeTransport(displayName: cameraName)
-        let remote = FakeTransport(displayName: remoteName)
+    public static func linkedPair(cameraName: String = "Camera", remoteName: String = "Remote", appLevelPairing: Bool = true) -> (camera: FakeTransport, remote: FakeTransport) {
+        let camera = FakeTransport(displayName: cameraName, appLevelPairing: appLevelPairing)
+        let remote = FakeTransport(displayName: remoteName, appLevelPairing: appLevelPairing)
         camera.link = remote
         remote.link = camera
         return (camera, remote)

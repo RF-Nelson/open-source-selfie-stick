@@ -395,9 +395,16 @@ public final class CameraHostModel {
             link = .connected(peer, nil)
             isPaired = false
             transport.stopAdvertising()
-            currentChallenge = .random()
-            send(.challenge(currentChallenge.nonce))
-            startPairingTimeout()
+            if transport.requiresAppLevelPairing {
+                currentChallenge = .random()
+                send(.challenge(currentChallenge.nonce))
+                startPairingTimeout()
+            } else {
+                // Wi-Fi Aware: the OS already paired the two devices, so accept immediately.
+                isPaired = true
+                send(.hello(HelloInfo(appVersion: appVersion, displayName: transport.localPeer.displayName, capabilities: capabilities)))
+                broadcastState()
+            }
         case .disconnected(let peer):
             guard link.peer?.id == peer.id else { return }
             let wasPaired = isPaired
