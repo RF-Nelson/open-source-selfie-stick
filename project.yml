@@ -30,6 +30,10 @@ targets:
         product: PairAndShootCore
     entitlements:
       path: PairAndShoot/PairAndShoot.entitlements
+      properties:
+        com.apple.developer.wifi-aware:
+          - Publish
+          - Subscribe
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.richardnelson.opensourceselfiestick
