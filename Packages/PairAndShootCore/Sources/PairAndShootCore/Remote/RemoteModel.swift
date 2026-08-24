@@ -50,6 +50,7 @@ public final class RemoteModel {
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
     @ObservationIgnored private var expectsDisconnect = false
     @ObservationIgnored private var pendingCode: PairingCode?
+    @ObservationIgnored private var didReceiveChallenge = false
 
     public init(transport: any PeerTransport, mediaStore: any MediaStore, appVersion: String) {
         self.transport = transport
@@ -87,6 +88,7 @@ public final class RemoteModel {
 
     public func connect(to peer: Peer, code: PairingCode) {
         pendingCode = code
+        didReceiveChallenge = false
         connection = .connecting(peer)
         // The code is proved over the data channel once connected, so no context here and a longer
         // timeout for Bluetooth, which is slower to establish a session.
@@ -173,14 +175,22 @@ public final class RemoteModel {
             connection = .connecting(peer)
         case .disconnected(let peer):
             guard connection.peer?.id == peer.id else { return }
-            let wasConnected = connection.isConnected
+            let wasPaired = connection.isConnected
+            let reachedCamera = didReceiveChallenge
             connection = .browsing
             camera = nil
             cameraState = nil
+            didReceiveChallenge = false
             if expectsDisconnect {
                 expectsDisconnect = false
+            } else if wasPaired {
+                show("The camera disconnected.")
+            } else if reachedCamera {
+                // We connected and were challenged, but pairing didn't complete — most likely the code.
+                show("The camera didn't accept the code. Check it and try again.")
             } else {
-                show(wasConnected ? "The camera disconnected." : "The camera didn't accept the code. Check it and try again.")
+                // The session never established — typically Bluetooth-only with Wi-Fi off.
+                show("Couldn't connect to the camera. Turn Wi-Fi on for a reliable link — you don't have to join a network.")
             }
         case .message(let data, let peer):
             guard connection.peer?.id == peer.id else { return }
@@ -215,6 +225,7 @@ public final class RemoteModel {
         guard case .event(let event) = message else { return }
         switch event {
         case .challenge(let nonce):
+            didReceiveChallenge = true
             guard let code = pendingCode, let peer = connection.peer else { return }
             let proof = Pairing.proof(code: code, challenge: PairingChallenge(nonce: nonce), remoteName: transport.localPeer.displayName)
             let submission = PairingSubmission(proof: proof, displayName: transport.localPeer.displayName, appVersion: appVersion)

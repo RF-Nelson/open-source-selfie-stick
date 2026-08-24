@@ -1,5 +1,6 @@
 import Foundation
 import MultipeerConnectivity
+import os
 
 /// The production transport: MultipeerConnectivity over Bluetooth, infrastructure Wi-Fi, or peer-to-peer Wi-Fi.
 ///
@@ -22,6 +23,7 @@ public final class MultipeerTransport: NSObject, PeerTransport, @unchecked Senda
     private var discoveryInfoByID: [String: [String: String]] = [:]
     private var progressObservations: [String: NSKeyValueObservation] = [:]
     private let inboxDirectory: URL
+    private let log = Logger(subsystem: "com.richardnelson.opensourceselfiestick", category: "mc")
 
     public init(displayName: String, serviceType: String = WireProtocol.serviceType) {
         self.serviceType = serviceType
@@ -74,6 +76,7 @@ public final class MultipeerTransport: NSObject, PeerTransport, @unchecked Senda
         }
         previous?.stopAdvertisingPeer()
         advertiser.startAdvertisingPeer()
+        log.info("advertising as \(self.myPeerID.displayName, privacy: .public)")
     }
 
     public func stopAdvertising() {
@@ -94,6 +97,7 @@ public final class MultipeerTransport: NSObject, PeerTransport, @unchecked Senda
             return browser
         }
         browser.startBrowsingForPeers()
+        log.info("browsing for peers")
     }
 
     public func stopBrowsing() {
@@ -194,11 +198,13 @@ private final class InvitationResponder: @unchecked Sendable {
 
 extension MultipeerTransport: MCNearbyServiceAdvertiserDelegate {
     public func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: any Error) {
+        log.error("didNotStartAdvertising: \(error.localizedDescription, privacy: .public)")
         continuation.yield(.failure("This device can't be discovered right now: \(error.localizedDescription)"))
     }
 
     public func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didReceiveInvitationFromPeer peerID: MCPeerID,
                            withContext context: Data?, invitationHandler: @escaping (Bool, MCSession?) -> Void) {
+        log.info("invitation from \(peerID.displayName, privacy: .public) contextBytes=\(context?.count ?? -1)")
         let responder = InvitationResponder(session: session, handler: invitationHandler)
         continuation.yield(.invitation(from: peer(for: peerID), context: context, respond: { accept in
             responder.respond(accept)
@@ -211,6 +217,7 @@ extension MultipeerTransport: MCNearbyServiceBrowserDelegate {
         var peer = peer(for: peerID)
         lock.withLock { discoveryInfoByID[peer.id] = info }
         peer.discoveryInfo = info
+        log.info("found peer \(peerID.displayName, privacy: .public) info=\(String(describing: info), privacy: .public)")
         continuation.yield(.peerFound(peer))
     }
 
@@ -219,6 +226,7 @@ extension MultipeerTransport: MCNearbyServiceBrowserDelegate {
     }
 
     public func browser(_ browser: MCNearbyServiceBrowser, didNotStartBrowsingForPeers error: any Error) {
+        log.error("didNotStartBrowsing: \(error.localizedDescription, privacy: .public)")
         continuation.yield(.failure("Can't search for cameras: \(error.localizedDescription)"))
     }
 }
@@ -226,6 +234,14 @@ extension MultipeerTransport: MCNearbyServiceBrowserDelegate {
 extension MultipeerTransport: MCSessionDelegate {
     public func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
         let peer = peer(for: peerID)
+        let name: String
+        switch state {
+        case .connecting: name = "connecting"
+        case .connected: name = "connected"
+        case .notConnected: name = "notConnected"
+        @unknown default: name = "unknown"
+        }
+        log.info("session \(peerID.displayName, privacy: .public) -> \(name, privacy: .public)")
         switch state {
         case .connecting: continuation.yield(.connecting(peer))
         case .connected: continuation.yield(.connected(peer))

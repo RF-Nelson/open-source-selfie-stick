@@ -147,15 +147,28 @@ import Testing
         #expect(model.notice?.contains("didn't match") == true)
     }
 
-    @Test func silentDisconnectWhileConnectingStillExplainsItself() async {
+    @Test func challengedThenDroppedBlamesTheCode() async {
         let model = makeModel()
         transport.emit(.peerFound(camera))
         _ = await waitUntil { model.cameras.count == 1 }
         model.connect(to: camera, code: PairingCode("0000")!)
         transport.simulateConnected(camera)
-        transport.emit(.disconnected(camera))   // no rejected event arrived (e.g. lost)
+        transport.emit(.message(try! encodedEvent(.challenge("0123456789abcdef")), from: camera))
+        _ = await waitUntil { transport.sentPairSubmission != nil }
+        transport.emit(.disconnected(camera))   // rejected event lost; we were challenged, so blame the code
         #expect(await waitUntil { model.connection == .browsing })
-        #expect(model.notice?.contains("didn't accept") == true)
+        #expect(model.notice?.contains("didn't accept the code") == true)
+    }
+
+    @Test func connectionThatNeverEstablishesSuggestsWifi() async {
+        let model = makeModel()
+        transport.emit(.peerFound(camera))
+        _ = await waitUntil { model.cameras.count == 1 }
+        model.connect(to: camera, code: PairingCode("0000")!)
+        // The session never connects and no challenge ever arrives (Bluetooth-only, Wi-Fi off).
+        transport.emit(.disconnected(camera))
+        #expect(await waitUntil { model.connection == .browsing })
+        #expect(model.notice?.lowercased().contains("wi-fi") == true)
     }
 
     @Test func versionMismatchDisconnects() async throws {
