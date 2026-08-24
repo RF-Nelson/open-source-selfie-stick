@@ -103,6 +103,9 @@ private struct DiscoveryView: View {
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
+            if !model.requiresCode, #available(iOS 26.0, *) {
+                RemotePairButton()
+            }
             if model.cameras.isEmpty {
                 VStack(spacing: 14) {
                     ProgressView().tint(.white).controlSize(.large)

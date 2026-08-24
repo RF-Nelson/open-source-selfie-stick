@@ -43,6 +43,9 @@ public final class CameraHostModel {
 
     public var lastCapture: CaptureResult? { captures.last }
     public var localName: String { transport.localPeer.displayName }
+    /// Whether this camera authenticates with a 4-digit code (Multipeer). Wi-Fi Aware pairs at the
+    /// system level, so the code UI is replaced by the system pairing flow.
+    public var usesCodePairing: Bool { transport.requiresAppLevelPairing }
 
     /// Whether this device keeps its own copy of every capture in its Photos library.
     public var keepsCopies: Bool {

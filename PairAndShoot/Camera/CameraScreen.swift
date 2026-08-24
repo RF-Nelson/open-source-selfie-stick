@@ -106,8 +106,13 @@ struct CameraScreen: View {
                     }
                     Spacer()
                     if !model.link.isConnected, model.availability == .ready {
-                        PairingCard(model: model)
-                            .padding(.bottom, 20)
+                        if model.usesCodePairing {
+                            PairingCard(model: model)
+                                .padding(.bottom, 20)
+                        } else if #available(iOS 26.0, *) {
+                            CameraPairButton()
+                                .padding(.bottom, 20)
+                        }
                     }
                     TransferBannerHost(transfer: model.outgoingTransfer)
                         .padding(.bottom, 12)
