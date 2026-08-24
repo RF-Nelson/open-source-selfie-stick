@@ -386,3 +386,12 @@ struct PhotoAccessWarning: View {
         .accessibilityElement(children: .combine)
     }
 }
+
+
+/// Opens the system Photos app so people can review what was saved this session.
+enum ExternalApp {
+    @MainActor static func openPhotos() {
+        guard let url = URL(string: "photos-redirect://") else { return }
+        UIApplication.shared.open(url)
+    }
+}

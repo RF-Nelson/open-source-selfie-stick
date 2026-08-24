@@ -306,6 +306,11 @@ private struct CameraSettingsSheet: View {
             Form {
                 Section {
                     Toggle("Keep copies in Photos", isOn: $model.keepsCopies)
+                    Button {
+                        ExternalApp.openPhotos()
+                    } label: {
+                        Label("Open Photos", systemImage: "photo.on.rectangle.angled")
+                    }
                 } header: {
                     Text("This device")
                 } footer: {

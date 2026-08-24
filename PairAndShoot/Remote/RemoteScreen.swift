@@ -242,10 +242,25 @@ private struct ControlDeck: View {
             }
             .frame(height: 220)
         } else {
-            VStack(spacing: 10) {
-                CaptureThumbnail(result: model.lastCapture, size: 200)
-                Text(model.lastCapture == nil ? "Nothing shot yet" : "Last capture · \(model.captures.count) this session")
-                    .font(.footnote)
+            VStack(spacing: 12) {
+                Button {
+                    ExternalApp.openPhotos()
+                } label: {
+                    CaptureThumbnail(result: model.lastCapture, size: 200)
+                }
+                .buttonStyle(.plain)
+                Button {
+                    ExternalApp.openPhotos()
+                } label: {
+                    Label("Open Photos", systemImage: "photo.on.rectangle.angled")
+                        .font(.subheadline.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .tint(.white)
+                Text(model.lastCapture == nil
+                     ? "Shots you take appear here and in Photos"
+                     : "\(model.captures.count) this session · tap to open Photos")
+                    .font(.caption)
                     .foregroundStyle(Theme.inkMuted)
             }
         }
@@ -274,6 +289,11 @@ private struct RemoteSettingsSheet: View {
                 Section {
                     Toggle("Photos", isOn: $model.sendBackPhotos)
                     Toggle("Videos", isOn: $model.sendBackVideos)
+                    Button {
+                        ExternalApp.openPhotos()
+                    } label: {
+                        Label("Open Photos", systemImage: "photo.on.rectangle.angled")
+                    }
                 } header: {
                     Text("Send copies to this device")
                 } footer: {

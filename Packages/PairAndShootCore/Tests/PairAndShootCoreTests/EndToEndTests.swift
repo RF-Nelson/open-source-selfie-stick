@@ -57,3 +57,32 @@ import Testing
         #expect(await waitUntil { remote.cameras.count == 1 })
     }
 }
+
+@Suite @MainActor struct VideoSendBackTests {
+    @Test func videoSendBackReachesTheRemote() async throws {
+        let (cameraTransport, remoteTransport) = FakeTransport.linkedPair(cameraName: "iPhone · A7", remoteName: "iPad")
+        let device = FakeCameraDevice()
+        let cameraStore = FakeMediaStore()
+        let remoteStore = FakeMediaStore()
+        let camera = CameraHostModel(transport: cameraTransport, device: device, mediaStore: cameraStore, appVersion: "2.0")
+        let remote = RemoteModel(transport: remoteTransport, mediaStore: remoteStore, appVersion: "2.0")
+
+        await camera.start()
+        remote.start()
+        #expect(await waitUntil { remote.cameras.count == 1 })
+        remote.connect(to: remote.cameras.last!, code: camera.pairingCode)
+        #expect(await waitUntil { remote.connection.isConnected && camera.link.isConnected && remote.cameraState != nil })
+
+        remote.sendBackVideos = true
+        remote.setMode(.video)
+        #expect(await waitUntil { remote.cameraState?.mode == .video })
+        remote.shutter()
+        #expect(await waitUntil { remote.cameraState?.isRecording == true })
+        remote.shutter()
+
+        #expect(await waitUntil { remoteStore.videos.count == 1 })
+        #expect(cameraStore.videos.count == 1)
+        #expect(remote.captures.last?.willSendFile == true)
+        #expect(remote.transfer?.phase == .saved)
+    }
+}

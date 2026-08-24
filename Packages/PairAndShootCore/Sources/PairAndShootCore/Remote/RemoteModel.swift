@@ -248,6 +248,8 @@ public final class RemoteModel {
             transfer = TransferStatus(name: name, fraction: 1, phase: .saved)
         } catch {
             transfer = TransferStatus(name: name, fraction: 1, phase: .failed(error.localizedDescription))
+            let kind = ["mov", "mp4", "m4v"].contains(url.pathExtension.lowercased()) ? "video" : "photo"
+            show("Couldn't save the \(kind) to this device. \(error.localizedDescription)")
         }
     }
 

@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 enum Role: String, Identifiable, CaseIterable {
@@ -25,6 +26,10 @@ struct RootView: View {
             }
             .task {
                 await photoAccess.requestIfNeeded()
+                // Ask for the microphone up front too, so it never interrupts the first video recording.
+                if AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined {
+                    _ = await AVCaptureDevice.requestAccess(for: .audio)
+                }
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { photoAccess.refresh() }
