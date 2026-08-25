@@ -132,6 +132,12 @@ public final class RemoteModel {
         transport.disconnect()
     }
 
+    /// Nudge discovery, e.g. right after a Wi-Fi Aware pairing completes.
+    public func restartBrowsing() {
+        transport.stopBrowsing()
+        transport.startBrowsing()
+    }
+
     // MARK: Controls
 
     /// The one big button: takes a photo, or starts/stops recording, or cancels a running countdown.

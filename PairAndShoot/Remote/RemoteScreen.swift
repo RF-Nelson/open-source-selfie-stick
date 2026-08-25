@@ -105,7 +105,7 @@ private struct DiscoveryView: View {
         VStack(spacing: 24) {
             Spacer()
             if !model.requiresCode, #available(iOS 26.0, *) {
-                RemotePairButton()
+                RemotePairButton(onPaired: { model.restartBrowsing() })
             }
             if model.cameras.isEmpty {
                 VStack(spacing: 14) {

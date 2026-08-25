@@ -1,12 +1,14 @@
 #if os(iOS)
+import DeviceDiscoveryUI
+import Network
 import PairAndShootCore
 import SwiftUI
+import WiFiAware
 
-/// Dark-screen card prompting the camera's owner to make it pairable over Wi-Fi Aware.
+/// Camera side: a Wi-Fi Aware pairing control. `DevicePairingView` publishes the service and presents
+/// the system pairing UI when tapped, making this device discoverable to a remote's picker.
 @available(iOS 26.0, *)
 struct CameraPairButton: View {
-    @State private var showing = false
-
     var body: some View {
         VStack(spacing: 10) {
             Text("Pair over Wi-Fi Aware")
@@ -14,14 +16,26 @@ struct CameraPairButton: View {
                 .textCase(.uppercase)
                 .tracking(1.4)
                 .foregroundStyle(Theme.inkMuted)
-            Button {
-                showing = true
-            } label: {
-                Label("Pair a remote", systemImage: "dot.radiowaves.left.and.right")
-                    .font(.headline)
-                    .padding(.horizontal, 8)
+            if let service = WiFiAwarePairing.publishableService {
+                DevicePairingView(
+                    WAPublisherListener.wifiAware(.connecting(to: service, from: .userSpecifiedDevices))
+                ) {
+                    Label("Pair a remote", systemImage: "dot.radiowaves.left.and.right")
+                        .font(.headline)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 12)
+                        .background(Color.accentColor, in: Capsule())
+                } fallback: {
+                    Text("Wi-Fi Aware isn’t available on this device.")
+                        .font(.footnote)
+                        .foregroundStyle(Theme.inkMuted)
+                }
+            } else {
+                Text("Wi-Fi Aware service isn’t configured.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.inkMuted)
             }
-            .buttonStyle(.borderedProminent)
             Text("On the other device open Remote and tap “Pair a camera,” then confirm on both.")
                 .font(.footnote)
                 .foregroundStyle(Theme.inkMuted)
@@ -31,48 +45,34 @@ struct CameraPairButton: View {
         .frame(maxWidth: 360)
         .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(.white.opacity(0.12)))
-        .sheet(isPresented: $showing) {
-            if let service = WiFiAwarePairing.publishableService {
-                CameraPairingSheet(service: service).ignoresSafeArea()
-            } else {
-                PairingUnavailable()
-            }
-        }
     }
 }
 
-/// Button the remote shows to find and pair a camera over Wi-Fi Aware.
+/// Remote side: `DevicePicker` browses for pairable cameras and presents the system picker when
+/// tapped; `onSelect` delivers the paired endpoint. After pairing, the transport's browse finds the
+/// now-paired camera and it appears in the list to connect.
 @available(iOS 26.0, *)
 struct RemotePairButton: View {
-    @State private var showing = false
+    var onPaired: () -> Void = {}
 
     var body: some View {
-        Button {
-            showing = true
-        } label: {
-            Label("Pair a camera", systemImage: "plus.circle")
-                .font(.subheadline.weight(.semibold))
-        }
-        .buttonStyle(.bordered)
-        .tint(.white)
-        .sheet(isPresented: $showing) {
-            if let service = WiFiAwarePairing.subscribableService {
-                RemotePairingPicker(service: service) { _ in showing = false }.ignoresSafeArea()
-            } else {
-                PairingUnavailable()
+        if let service = WiFiAwarePairing.subscribableService {
+            DevicePicker(
+                WASubscriberBrowser.wifiAware(.connecting(to: .userSpecifiedDevices, from: service)),
+                onSelect: { _ in onPaired() }
+            ) {
+                Label("Pair a camera", systemImage: "plus.circle")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(.white.opacity(0.14), in: Capsule())
+            } fallback: {
+                Text("Wi-Fi Aware isn’t available on this device.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.inkMuted)
             }
         }
-    }
-}
-
-private struct PairingUnavailable: View {
-    var body: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "wifi.exclamationmark").font(.largeTitle)
-            Text("Wi-Fi Aware isn’t available on this device.")
-                .multilineTextAlignment(.center)
-        }
-        .padding(32)
     }
 }
 #endif
