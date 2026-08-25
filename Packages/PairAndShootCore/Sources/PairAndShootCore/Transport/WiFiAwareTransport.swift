@@ -98,10 +98,21 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
                 await self?.adopt(connection: connection, peer: nil)
             }
         } catch {
-            if !Task.isCancelled {
+            guard !Task.isCancelled else { return }
+            if Self.isNoPairedDevices(error) {
+                log.notice("wifi-aware publisher: no paired devices yet — pair a remote first")
+            } else {
+                log.error("wifi-aware publisher failed: \(error.localizedDescription, privacy: .public)")
                 continuation.yield(.failure("Wi-Fi Aware couldn’t start: \(error.localizedDescription)"))
             }
         }
+    }
+
+    /// A "no paired devices" error is expected before the user pairs — not something to alarm them with.
+    static func isNoPairedDevices(_ error: any Error) -> Bool {
+        let wa = (error as? WAError) ?? (error as? NWError)?.wifiAware
+        if let wa, case .noPairedDevices = wa { return true }
+        return false
     }
 
     // MARK: Browser (remote)
@@ -132,7 +143,11 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
                 self?.updateDiscovered(endpoints)
             }
         } catch {
-            if !Task.isCancelled {
+            guard !Task.isCancelled else { return }
+            if Self.isNoPairedDevices(error) {
+                log.notice("wifi-aware browser: no paired cameras yet — pair a camera first")
+            } else {
+                log.error("wifi-aware browser failed: \(error.localizedDescription, privacy: .public)")
                 continuation.yield(.failure("Can’t search for cameras over Wi-Fi Aware: \(error.localizedDescription)"))
             }
         }
