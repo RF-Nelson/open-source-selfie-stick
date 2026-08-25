@@ -42,6 +42,14 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
     private var incomingFiles: [String: (handle: FileHandle, url: URL, name: String, size: Int, received: Int)] = [:]
     private let inboxDirectory: URL
 
+    /// Whether at least one device is paired for our service (pairing is done via DeviceDiscoveryUI).
+    private static var hasPairedDevice: Bool {
+        get async {
+            let devices = try? await WAPairedDevice.allDevices.current()
+            return (devices ?? [:]).isEmpty == false
+        }
+    }
+
     /// Whether Wi-Fi Aware is usable on this device.
     public static var isSupported: Bool {
         if #available(iOS 26.0, *) {
@@ -89,6 +97,12 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
     private func runListener(service: WAPublishableService) async {
         log.notice("wifi-aware listener starting for \(self.serviceName, privacy: .public)")
         while !Task.isCancelled {
+            // Don't publish until a remote is paired — otherwise we collide with the DeviceDiscoveryUI
+            // pairing view, which publishes the same service (NWError -11999).
+            guard await Self.hasPairedDevice else {
+                try? await Task.sleep(for: .seconds(2))
+                continue
+            }
             do {
                 let listener = try NetworkListener(
                     for: .wifiAware(.connecting(to: service, from: .allPairedDevices))
@@ -100,24 +114,10 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
                 }
             } catch {
                 guard !Task.isCancelled else { return }
-                if Self.isNoPairedDevices(error) {
-                    // Expected until a remote is paired; retry so we pick it up right after pairing.
-                    log.notice("wifi-aware publisher: no paired devices yet — retrying")
-                    try? await Task.sleep(for: .seconds(3))
-                    continue
-                }
-                log.error("wifi-aware publisher failed: \(error.localizedDescription, privacy: .public)")
-                continuation.yield(.failure("Wi-Fi Aware couldn’t start: \(error.localizedDescription)"))
-                return
+                log.error("wifi-aware publisher error: \(error.localizedDescription, privacy: .public)")
+                try? await Task.sleep(for: .seconds(3))
             }
         }
-    }
-
-    /// A "no paired devices" error is expected before the user pairs — not something to alarm them with.
-    static func isNoPairedDevices(_ error: any Error) -> Bool {
-        let wa = (error as? WAError) ?? (error as? NWError)?.wifiAware
-        if let wa, case .noPairedDevices = wa { return true }
-        return false
     }
 
     // MARK: Browser (remote)
@@ -141,6 +141,11 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
     private func runBrowser(service: WASubscribableService) async {
         log.notice("wifi-aware browser starting for \(self.serviceName, privacy: .public)")
         while !Task.isCancelled {
+            // Don't browse until a camera is paired — the DeviceDiscoveryUI picker handles pairing.
+            guard await Self.hasPairedDevice else {
+                try? await Task.sleep(for: .seconds(2))
+                continue
+            }
             do {
                 let browser = NetworkBrowser(
                     for: .wifiAware(.connecting(to: .allPairedDevices, from: service))
@@ -150,15 +155,8 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
                 }
             } catch {
                 guard !Task.isCancelled else { return }
-                if Self.isNoPairedDevices(error) {
-                    // Expected until a camera is paired; retry so we find it right after pairing.
-                    log.notice("wifi-aware browser: no paired cameras yet — retrying")
-                    try? await Task.sleep(for: .seconds(3))
-                    continue
-                }
-                log.error("wifi-aware browser failed: \(error.localizedDescription, privacy: .public)")
-                continuation.yield(.failure("Can’t search for cameras over Wi-Fi Aware: \(error.localizedDescription)"))
-                return
+                log.error("wifi-aware browser error: \(error.localizedDescription, privacy: .public)")
+                try? await Task.sleep(for: .seconds(3))
             }
         }
     }
