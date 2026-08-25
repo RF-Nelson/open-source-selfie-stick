@@ -41,6 +41,7 @@ struct CameraScreen: View {
     @State private var confirmDisconnect = false
     @State private var localTimer = 0
     @State private var zoomBase: CGFloat = 1
+    @State private var pairingState = WiFiAwarePairingState()
     @Environment(PhotoLibraryAccess.self) private var photoAccess
 
     var body: some View {
@@ -57,6 +58,7 @@ struct CameraScreen: View {
         .persistentSystemOverlays(.hidden)
         .task {
             UIApplication.shared.isIdleTimerDisabled = true
+            if #available(iOS 26.0, *) { pairingState.start() }
             let stack = self.stack ?? CameraStack()
             self.stack = stack
             await stack.model.start()
@@ -110,7 +112,7 @@ struct CameraScreen: View {
                         if model.usesCodePairing {
                             PairingCard(model: model)
                                 .padding(.bottom, 20)
-                        } else if #available(iOS 26.0, *) {
+                        } else if #available(iOS 26.0, *), !pairingState.hasPaired {
                             CameraPairButton()
                                 .padding(.bottom, 20)
                         }

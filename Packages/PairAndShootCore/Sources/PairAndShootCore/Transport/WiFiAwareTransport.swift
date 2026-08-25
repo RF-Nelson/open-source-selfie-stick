@@ -90,31 +90,43 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
     }
 
     public func stopAdvertising() {
+        // While a connection is live, the listener task owns that connection's lifetime — the
+        // connection was created inside `listener.run`, so cancelling the task tears the live
+        // connection down with a cancel (NWError 89). A OneToOne listener won't hand us a second
+        // peer while the first is still being handled, so leave it running until the connection ends;
+        // `markDisconnected`/`disconnect` restart discovery when it does.
+        guard lock.withLock({ connection == nil }) else { return }
         listenerTask?.cancel()
         listenerTask = nil
     }
 
     private func runListener(service: WAPublishableService) async {
         log.notice("wifi-aware listener starting for \(self.serviceName, privacy: .public)")
+        Trace.reset()
+        Trace.log("listener starting for \(serviceName)")
         while !Task.isCancelled {
             // Don't publish until a remote is paired — otherwise we collide with the DeviceDiscoveryUI
             // pairing view, which publishes the same service (NWError -11999).
             guard await Self.hasPairedDevice else {
+                Trace.log("listener: no paired device yet, waiting")
                 try? await Task.sleep(for: .seconds(2))
                 continue
             }
             do {
+                Trace.log("listener: paired — creating NetworkListener")
                 let listener = try NetworkListener(
                     for: .wifiAware(.connecting(to: service, from: .allPairedDevices))
                 ) {
                     Coder(WAFrame.self, using: .json) { TCP() }
                 }
+                Trace.log("listener: running, awaiting connections")
                 try await listener.run { [weak self] connection in
                     await self?.adopt(connection: connection, peer: nil)
                 }
             } catch {
                 guard !Task.isCancelled else { return }
                 log.error("wifi-aware publisher error: \(error.localizedDescription, privacy: .public)")
+                Trace.log("listener ERROR: \(error.localizedDescription)")
                 try? await Task.sleep(for: .seconds(3))
             }
         }
@@ -140,13 +152,17 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
 
     private func runBrowser(service: WASubscribableService) async {
         log.notice("wifi-aware browser starting for \(self.serviceName, privacy: .public)")
+        Trace.reset()
+        Trace.log("browser starting for \(serviceName)")
         while !Task.isCancelled {
             // Don't browse until a camera is paired — the DeviceDiscoveryUI picker handles pairing.
             guard await Self.hasPairedDevice else {
+                Trace.log("browser: no paired device yet, waiting")
                 try? await Task.sleep(for: .seconds(2))
                 continue
             }
             do {
+                Trace.log("browser: paired — creating NetworkBrowser")
                 let browser = NetworkBrowser(
                     for: .wifiAware(.connecting(to: .allPairedDevices, from: service))
                 )
@@ -156,6 +172,7 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
             } catch {
                 guard !Task.isCancelled else { return }
                 log.error("wifi-aware browser error: \(error.localizedDescription, privacy: .public)")
+                Trace.log("browser ERROR: \(error.localizedDescription)")
                 try? await Task.sleep(for: .seconds(3))
             }
         }
@@ -173,6 +190,7 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
                 endpointsByPeerID[id] = endpoint
             }
         }
+        if !found.isEmpty { Trace.log("browser discovered \(found.count) new (endpoints=\(endpoints.count))") }
         for peer in found { continuation.yield(.peerFound(peer)) }
     }
 
@@ -180,9 +198,11 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
 
     public func invite(_ peer: Peer, context: Data?, timeout: TimeInterval) {
         guard let endpoint = lock.withLock({ endpointsByPeerID[peer.id] }) else {
+            Trace.log("invite: no endpoint for \(peer.displayName)")
             continuation.yield(.failure("That camera is no longer in range."))
             return
         }
+        Trace.log("invite: connecting to \(peer.displayName)")
         continuation.yield(.connecting(peer))
         let connection = NetworkConnection(to: endpoint) {
             Coder(WAFrame.self, using: .json) { TCP() }
@@ -200,16 +220,41 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
             self.connection = connection
             self.connectedPeer = peer
         }
-        // The devices are already paired at the system level, so treat an adopted connection as
-        // connected and drive the receive loop. (State observation can refine this during testing.)
-        continuation.yield(.connected(peer))
+        Trace.log("adopting \(knownPeer == nil ? "incoming" : "outgoing") connection \(connection.id)")
+        log.notice("adopting \(knownPeer == nil ? "incoming" : "outgoing", privacy: .public) connection \(connection.id, privacy: .public)")
+        connection.onStateUpdate { [weak self] conn, state in
+            guard let self else { return }
+            let name: String
+            switch state {
+            case .setup: name = "setup"
+            case .preparing: name = "preparing"
+            case .waiting(let error): name = "waiting(\(error.localizedDescription))"
+            case .ready: name = "ready"
+            case .failed(let error): name = "failed(\(error.localizedDescription))"
+            case .cancelled: name = "cancelled"
+            @unknown default: name = "unknown"
+            }
+            Trace.log("connection \(conn.id) -> \(name)")
+            self.log.notice("connection \(conn.id, privacy: .public) -> \(name, privacy: .public)")
+            switch state {
+            case .ready:
+                self.continuation.yield(.connected(peer))
+            case .failed, .cancelled:
+                self.markDisconnected(peer)
+            default:
+                break
+            }
+        }
         do {
             for try await message in connection.messages {
                 handle(frame: message.content, from: peer)
             }
-            // Stream ended: peer disconnected.
+            Trace.log("connection \(connection.id) messages ended")
+            log.notice("connection \(connection.id, privacy: .public) messages ended")
             markDisconnected(peer)
         } catch {
+            Trace.log("connection \(connection.id) receive ERROR: \(error.localizedDescription)")
+            log.error("connection \(connection.id, privacy: .public) receive error: \(error.localizedDescription, privacy: .public)")
             markDisconnected(peer)
         }
     }
@@ -233,7 +278,10 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
         guard let connection = lock.withLock({ self.connection }) else { throw TransportError.notConnected }
         Task {
             do { try await connection.send(.message(data)) }
-            catch { continuation.yield(.failure("Couldn’t send: \(error.localizedDescription)")) }
+            catch {
+                Trace.log("send ERROR: \(error.localizedDescription)")
+                continuation.yield(.failure("Couldn’t send: \(error.localizedDescription)"))
+            }
         }
     }
 
@@ -317,6 +365,7 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
     }
 
     private func markDisconnected(_ peer: Peer) {
+        Trace.log("markDisconnected \(peer.displayName)")
         let shouldEmit = lock.withLock { () -> Bool in
             guard connectedPeer?.id == peer.id else { return false }
             connection = nil

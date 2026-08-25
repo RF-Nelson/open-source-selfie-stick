@@ -100,11 +100,12 @@ struct RemoteScreen: View {
 private struct DiscoveryView: View {
     let model: RemoteModel
     let onSelect: (Peer) -> Void
+    @State private var pairingState = WiFiAwarePairingState()
 
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
-            if !model.requiresCode, #available(iOS 26.0, *) {
+            if !model.requiresCode, #available(iOS 26.0, *), !pairingState.hasPaired {
                 RemotePairButton(onPaired: { model.restartBrowsing() })
             }
             if model.cameras.isEmpty {
@@ -157,12 +158,18 @@ private struct DiscoveryView: View {
                 .frame(maxWidth: 480)
             }
             Spacer()
-            Text("You are “\(model.localName)”")
-                .font(.footnote)
-                .foregroundStyle(Theme.inkMuted)
-                .padding(.bottom, 16)
+            // Wi-Fi Aware presents the system-assigned device names itself, so only show our own
+            // local-name hint on the code-pairing (Multipeer) path where the app manages names.
+            if model.requiresCode {
+                Text("You are “\(model.localName)”")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.inkMuted)
+                    .padding(.bottom, 16)
+            }
         }
         .padding(.horizontal, 24)
+        .onAppear { pairingState.start() }
+        .onDisappear { pairingState.stop() }
     }
 }
 

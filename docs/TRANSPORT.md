@@ -81,3 +81,36 @@ be on iOS 26 to use Wi-Fi Aware; a mixed pair uses Multipeer (and needs Wi-Fi, p
 (2) `requiresAppLevelPairing` + model skip-pairing; (3) transport-selection factory in the app;
 (4) `DeviceDiscoveryUI` pairing screen; (5) on-device test between the two iOS 26 phones.
 Steps 1–3 compile and unit-test on this Mac; 4–5 need the devices.
+
+## Wi-Fi Aware — on-device findings & the connection-lifetime fix (2026-08-25)
+
+Tested between two iPhone 17 Pro Max on iOS 26 (Camera + Remote). Discovery, the system pairing
+sheet, invite, and the data connection reaching `.ready` all work. The blocker was a
+structured-concurrency lifetime bug in our own code, now fixed.
+
+**The bug.** On `.connected`, `CameraHostModel` calls `transport.stopAdvertising()` to stop accepting
+further remotes. In `WiFiAwareTransport` the accepted connection is created *inside*
+`listener.run { connection in await adopt(connection) }`, so its lifetime is owned by the listener
+task. `stopAdvertising()` cancelled that task, which cancelled the live connection →
+`NWError 89` (canceled) on the camera's first `send(.hello)`, and a clean EOF ("messages ended") on
+the remote. Trace showed every attempt as `preparing → ready → (instant) messages ended →
+markDisconnected`.
+
+**The fix.** `stopAdvertising()` now no-ops while a connection is live (`connection != nil`). A
+OneToOne `NetworkListener` won't hand us a second peer while the first is being handled, so leaving
+the listener task running is safe; discovery restarts on disconnect. The transient
+"Turn WiFi on for a reliable link" banner is a `.waiting` hint during `preparing`, not the failure
+cause — the data path does reach ready even with Wi-Fi on-but-not-joined.
+
+**Two WA UI adjustments.** (1) The pairing control (`DevicePairingView` / `DevicePicker`) hides once
+`WAPairedDevice.allDevices` is non-empty — while visible it publishes/subscribes the same service as
+the transport and collides (`NWError -11999` / `-11988`); after pairing, the transport owns the
+service. (2) The remote's "You are <name>" hint is shown only on the code-pairing path
+(`requiresCode`); on Wi-Fi Aware iOS presents system-assigned device names itself.
+
+**Debugging without syslog.** `idevicesyslog` is unreliable on this hardware, so the app writes a
+`Trace` log to `Documents/transport.log`, pulled with
+`devicectl device copy from --domain-type appDataContainer --domain-identifier <bundle id>
+--source Documents/transport.log`. `Trace.reset()` clears once per launch so reconnect churn
+accumulates into one file. Strip or keep the `Trace` calls at release (they no-op if the file can't
+be written).

@@ -405,8 +405,10 @@ public final class CameraHostModel {
             } else {
                 // Wi-Fi Aware: the OS already paired the two devices, so accept immediately.
                 isPaired = true
+                Trace.log("camera: connected to \(peer.displayName) — sending hello")
                 send(.hello(HelloInfo(appVersion: appVersion, displayName: transport.localPeer.displayName, capabilities: capabilities)))
                 broadcastState()
+                Trace.log("camera: hello + state sent")
             }
         case .disconnected(let peer):
             guard link.peer?.id == peer.id else { return }

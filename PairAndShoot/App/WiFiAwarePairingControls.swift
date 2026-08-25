@@ -1,6 +1,7 @@
 #if os(iOS)
 import DeviceDiscoveryUI
 import Network
+import Observation
 import PairAndShootCore
 import SwiftUI
 import WiFiAware
@@ -75,4 +76,33 @@ struct RemotePairButton: View {
         }
     }
 }
+
+/// Tracks whether this device has a Wi-Fi Aware paired peer. The pairing controls and the transport
+/// both use the same Wi-Fi Aware service and cannot claim it simultaneously, so the UI shows the
+/// pairing control only until paired; afterward it hides and the transport owns the service to connect.
+@MainActor
+@Observable
+final class WiFiAwarePairingState {
+    private(set) var hasPaired = false
+    @ObservationIgnored private var task: Task<Void, Never>?
+
+    func start() {
+        guard task == nil else { return }
+        task = Task { [weak self] in
+            while !Task.isCancelled {
+                if #available(iOS 26.0, *) {
+                    let devices = try? await WAPairedDevice.allDevices.current()
+                    self?.hasPaired = (devices ?? [:]).isEmpty == false
+                }
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    func stop() {
+        task?.cancel()
+        task = nil
+    }
+}
+
 #endif
