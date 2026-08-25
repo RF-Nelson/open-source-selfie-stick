@@ -28,7 +28,7 @@ struct CameraPairingSheet: UIViewControllerRepresentable {
     let service: WAPublishableService
 
     func makeUIViewController(context: Context) -> DDDevicePairingViewController {
-        let provider = WAPublisherListener.wifiAware(.connecting(to: service, from: .allPairedDevices))
+        let provider = WAPublisherListener.wifiAware(.connecting(to: service, from: .userSpecifiedDevices))
         return DDDevicePairingViewController(listenerProvider: provider, access: .default)
     }
 
@@ -43,7 +43,7 @@ struct RemotePairingPicker: UIViewControllerRepresentable {
     let onResult: (Bool) -> Void
 
     func makeUIViewController(context: Context) -> UIViewController {
-        let provider = WASubscriberBrowser.wifiAware(.connecting(to: .allPairedDevices, from: service))
+        let provider = WASubscriberBrowser.wifiAware(.connecting(to: .userSpecifiedDevices, from: service))
         guard let picker = DDDevicePickerViewController(browseDescriptor: provider.makeDescriptor(), parameters: nil, access: .default) else {
             DispatchQueue.main.async { onResult(false) }
             return UIViewController()

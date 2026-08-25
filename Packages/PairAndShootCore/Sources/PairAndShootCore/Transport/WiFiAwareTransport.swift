@@ -87,23 +87,28 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
     }
 
     private func runListener(service: WAPublishableService) async {
-        do {
-            let listener = try NetworkListener(
-                for: .wifiAware(.connecting(to: service, from: .allPairedDevices))
-            ) {
-                Coder(WAFrame.self, using: .json) { TCP() }
-            }
-            log.notice("wifi-aware listener starting for \(self.serviceName, privacy: .public)")
-            try await listener.run { [weak self] connection in
-                await self?.adopt(connection: connection, peer: nil)
-            }
-        } catch {
-            guard !Task.isCancelled else { return }
-            if Self.isNoPairedDevices(error) {
-                log.notice("wifi-aware publisher: no paired devices yet — pair a remote first")
-            } else {
+        log.notice("wifi-aware listener starting for \(self.serviceName, privacy: .public)")
+        while !Task.isCancelled {
+            do {
+                let listener = try NetworkListener(
+                    for: .wifiAware(.connecting(to: service, from: .allPairedDevices))
+                ) {
+                    Coder(WAFrame.self, using: .json) { TCP() }
+                }
+                try await listener.run { [weak self] connection in
+                    await self?.adopt(connection: connection, peer: nil)
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                if Self.isNoPairedDevices(error) {
+                    // Expected until a remote is paired; retry so we pick it up right after pairing.
+                    log.notice("wifi-aware publisher: no paired devices yet — retrying")
+                    try? await Task.sleep(for: .seconds(3))
+                    continue
+                }
                 log.error("wifi-aware publisher failed: \(error.localizedDescription, privacy: .public)")
                 continuation.yield(.failure("Wi-Fi Aware couldn’t start: \(error.localizedDescription)"))
+                return
             }
         }
     }
@@ -134,21 +139,26 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
     }
 
     private func runBrowser(service: WASubscribableService) async {
-        do {
-            let browser = NetworkBrowser(
-                for: .wifiAware(.connecting(to: .allPairedDevices, from: service))
-            )
-            log.notice("wifi-aware browser starting for \(self.serviceName, privacy: .public)")
-            try await browser.run { [weak self] endpoints in
-                self?.updateDiscovered(endpoints)
-            }
-        } catch {
-            guard !Task.isCancelled else { return }
-            if Self.isNoPairedDevices(error) {
-                log.notice("wifi-aware browser: no paired cameras yet — pair a camera first")
-            } else {
+        log.notice("wifi-aware browser starting for \(self.serviceName, privacy: .public)")
+        while !Task.isCancelled {
+            do {
+                let browser = NetworkBrowser(
+                    for: .wifiAware(.connecting(to: .allPairedDevices, from: service))
+                )
+                try await browser.run { [weak self] endpoints in
+                    self?.updateDiscovered(endpoints)
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                if Self.isNoPairedDevices(error) {
+                    // Expected until a camera is paired; retry so we find it right after pairing.
+                    log.notice("wifi-aware browser: no paired cameras yet — retrying")
+                    try? await Task.sleep(for: .seconds(3))
+                    continue
+                }
                 log.error("wifi-aware browser failed: \(error.localizedDescription, privacy: .public)")
                 continuation.yield(.failure("Can’t search for cameras over Wi-Fi Aware: \(error.localizedDescription)"))
+                return
             }
         }
     }
