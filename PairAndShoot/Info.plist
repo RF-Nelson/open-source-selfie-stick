@@ -41,9 +41,9 @@
 		<key>_pairandshoot._udp</key>
 		<dict>
 			<key>Publishable</key>
-			<true/>
+			<dict/>
 			<key>Subscribable</key>
-			<true/>
+			<dict/>
 		</dict>
 	</dict>
 </dict>

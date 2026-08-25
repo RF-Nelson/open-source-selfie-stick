@@ -60,6 +60,7 @@ struct CameraScreen: View {
             let stack = self.stack ?? CameraStack()
             self.stack = stack
             await stack.model.start()
+            TransportFactory.markStarted()
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false

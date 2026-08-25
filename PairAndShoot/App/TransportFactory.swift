@@ -8,6 +8,10 @@ enum TransportFactory {
     /// UserDefaults flag toggled in Settings. Off by default until the Wi-Fi Aware system-pairing
     /// screen (DeviceDiscoveryUI) is wired up, so the app keeps using Multipeer for now.
     static let wifiAwarePreferenceKey = "useWiFiAware"
+    /// Set true while a Wi-Fi Aware transport is starting; cleared once it starts. If it's still set
+    /// at the next launch, the last attempt didn't finish (likely crashed), so we turn Wi-Fi Aware
+    /// off to avoid a crash loop the user can't escape (Settings lives behind a role screen).
+    static let wifiAwarePendingKey = "wifiAwareStartPending"
 
     /// Whether this device can do Wi-Fi Aware at all (iOS 26 + hardware support).
     static var wifiAwareSupported: Bool {
@@ -21,8 +25,22 @@ enum TransportFactory {
 
     static func make(displayName: String) -> any PeerTransport {
         if #available(iOS 26.0, *), wifiAwareEnabled {
+            UserDefaults.standard.set(true, forKey: wifiAwarePendingKey)
             return WiFiAwareTransport(displayName: displayName)
         }
         return MultipeerTransport(displayName: displayName)
+    }
+
+    /// Call once a transport has begun advertising/browsing without crashing.
+    static func markStarted() {
+        UserDefaults.standard.set(false, forKey: wifiAwarePendingKey)
+    }
+
+    /// Call at launch: recover from a Wi-Fi Aware start that crashed by turning the option off.
+    static func recoverIfWiFiAwareCrashed() {
+        if UserDefaults.standard.bool(forKey: wifiAwarePendingKey) {
+            UserDefaults.standard.set(false, forKey: wifiAwarePreferenceKey)
+            UserDefaults.standard.set(false, forKey: wifiAwarePendingKey)
+        }
     }
 }

@@ -25,6 +25,8 @@ struct RootView: View {
                 .environment(photoAccess)
             }
             .task {
+                // If a previous Wi-Fi Aware attempt crashed mid-start, fall back so we don't loop.
+                TransportFactory.recoverIfWiFiAwareCrashed()
                 // Ask for everything the app needs up front, so no prompt interrupts the first
                 // capture: camera, then microphone (for video), then the photo library.
                 if AVCaptureDevice.authorizationStatus(for: .video) == .notDetermined {

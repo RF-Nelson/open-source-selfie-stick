@@ -29,6 +29,7 @@ struct RemoteScreen: View {
             )
             self.model = model
             model.start()
+            TransportFactory.markStarted()
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
