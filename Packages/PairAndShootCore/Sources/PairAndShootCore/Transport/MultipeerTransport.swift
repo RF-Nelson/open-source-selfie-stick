@@ -77,6 +77,7 @@ public final class MultipeerTransport: NSObject, PeerTransport, @unchecked Senda
         previous?.stopAdvertisingPeer()
         advertiser.startAdvertisingPeer()
         log.notice("advertising as \(self.myPeerID.displayName, privacy: .public)")
+        Trace.log("mc: advertising as \(self.myPeerID.displayName)")
     }
 
     public func stopAdvertising() {
@@ -98,6 +99,7 @@ public final class MultipeerTransport: NSObject, PeerTransport, @unchecked Senda
         }
         browser.startBrowsingForPeers()
         log.notice("browsing for peers")
+        Trace.log("mc: browsing for peers")
     }
 
     public func stopBrowsing() {
@@ -108,9 +110,11 @@ public final class MultipeerTransport: NSObject, PeerTransport, @unchecked Senda
     public func invite(_ peer: Peer, context: Data?, timeout: TimeInterval) {
         let (browser, peerID) = lock.withLock { (self.browser, peerIDsByID[peer.id]) }
         guard let browser, let peerID else {
+            Trace.log("mc: invite failed — peer \(peer.displayName) no longer in range")
             continuation.yield(.failure("That camera is no longer in range."))
             return
         }
+        Trace.log("mc: inviting \(peerID.displayName) (timeout \(Int(timeout))s)")
         browser.invitePeer(peerID, to: session, withContext: context, timeout: timeout)
     }
 
@@ -199,12 +203,14 @@ private final class InvitationResponder: @unchecked Sendable {
 extension MultipeerTransport: MCNearbyServiceAdvertiserDelegate {
     public func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didNotStartAdvertisingPeer error: any Error) {
         log.error("didNotStartAdvertising: \(error.localizedDescription, privacy: .public)")
+        Trace.log("mc: didNotStartAdvertising: \(error.localizedDescription)")
         continuation.yield(.failure("This device can't be discovered right now: \(error.localizedDescription)"))
     }
 
     public func advertiser(_ advertiser: MCNearbyServiceAdvertiser, didReceiveInvitationFromPeer peerID: MCPeerID,
                            withContext context: Data?, invitationHandler: @escaping (Bool, MCSession?) -> Void) {
         log.notice("invitation from \(peerID.displayName, privacy: .public) contextBytes=\(context?.count ?? -1)")
+        Trace.log("mc: invitation from \(peerID.displayName) contextBytes=\(context?.count ?? -1)")
         let responder = InvitationResponder(session: session, handler: invitationHandler)
         continuation.yield(.invitation(from: peer(for: peerID), context: context, respond: { accept in
             responder.respond(accept)
@@ -218,15 +224,18 @@ extension MultipeerTransport: MCNearbyServiceBrowserDelegate {
         lock.withLock { discoveryInfoByID[peer.id] = info }
         peer.discoveryInfo = info
         log.notice("found peer \(peerID.displayName, privacy: .public) info=\(String(describing: info), privacy: .public)")
+        Trace.log("mc: found peer \(peerID.displayName)")
         continuation.yield(.peerFound(peer))
     }
 
     public func browser(_ browser: MCNearbyServiceBrowser, lostPeer peerID: MCPeerID) {
+        Trace.log("mc: lost peer \(peerID.displayName)")
         continuation.yield(.peerLost(peer(for: peerID)))
     }
 
     public func browser(_ browser: MCNearbyServiceBrowser, didNotStartBrowsingForPeers error: any Error) {
         log.error("didNotStartBrowsing: \(error.localizedDescription, privacy: .public)")
+        Trace.log("mc: didNotStartBrowsing: \(error.localizedDescription)")
         continuation.yield(.failure("Can't search for cameras: \(error.localizedDescription)"))
     }
 }
@@ -242,6 +251,7 @@ extension MultipeerTransport: MCSessionDelegate {
         @unknown default: name = "unknown"
         }
         log.notice("session \(peerID.displayName, privacy: .public) -> \(name, privacy: .public)")
+        Trace.log("mc: session \(peerID.displayName) -> \(name)")
         switch state {
         case .connecting: continuation.yield(.connecting(peer))
         case .connected: continuation.yield(.connected(peer))
