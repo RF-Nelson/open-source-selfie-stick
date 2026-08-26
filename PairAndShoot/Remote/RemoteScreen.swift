@@ -298,7 +298,6 @@ private struct RemoteSettingsSheet: View {
     @Bindable var model: RemoteModel
     @AppStorage(DeviceIdentity.nicknameKey) private var nickname = ""
     @AppStorage(TransportFactory.wifiAwarePreferenceKey) private var useWiFiAware = false
-    @AppStorage(TransportFactory.bluetoothPreferenceKey) private var useBluetooth = false
     @Environment(\.dismiss) private var dismiss
     @Environment(PhotoLibraryAccess.self) private var photoAccess
 
@@ -342,15 +341,14 @@ private struct RemoteSettingsSheet: View {
                 } footer: {
                     Text("The camera currently sees this device as “\(model.localName)”. A nickname applies the next time you open the remote.")
                 }
-                Section {
-                    Toggle("Use Bluetooth", isOn: $useBluetooth)
-                    if TransportFactory.wifiAwareSupported {
+                if TransportFactory.wifiAwareSupported {
+                    Section {
                         Toggle("Use Wi-Fi Aware", isOn: $useWiFiAware)
+                    } header: {
+                        Text("Experimental")
+                    } footer: {
+                        Text("Connect over Wi‑Fi Aware instead of the default Bluetooth + Wi‑Fi. Both devices need iOS 26 and must be paired in the system pairing prompt. Applies next time you open the remote.")
                     }
-                } header: {
-                    Text("Experimental")
-                } footer: {
-                    Text("Bluetooth connects the remote and camera with no Wi‑Fi at all. Controls work everywhere; photos and videos come back fast when both are on the same Wi‑Fi, slowly over Bluetooth otherwise.\(TransportFactory.wifiAwareSupported ? " Wi‑Fi Aware needs both devices on iOS 26, paired in the system prompt." : "") Applies next time you open the remote.")
                 }
                 if model.connection.isConnected {
                     Section {
