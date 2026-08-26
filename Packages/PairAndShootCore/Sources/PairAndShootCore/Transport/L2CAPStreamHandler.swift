@@ -22,9 +22,13 @@ final class L2CAPStreamHandler: NSObject, StreamDelegate {
 
     private let onMessage: (Data) -> Void
     private let onClose: (Error?) -> Void
-    /// One-shot, fired the next time the outgoing buffer fully drains. Used to time a file send and
-    /// report it finished only once every byte has left our buffer.
+    /// One-shot, fired the next time the outgoing buffer fully drains with nothing left to produce.
+    /// Used to time a file send and report it finished only once every byte has left our buffer.
     var onDrained: (() -> Void)?
+    /// A producer for a streaming file send: called for the next tagged payload when the buffer has
+    /// room, returning nil when there's nothing more right now. This keeps only ~one chunk buffered
+    /// (bounded memory) and lets a cancel stop cleanly on a frame boundary instead of mid-frame.
+    var nextChunk: (() -> Data?)?
 
     init(channel: CBL2CAPChannel, onMessage: @escaping (Data) -> Void, onClose: @escaping (Error?) -> Void) {
         self.channel = channel
@@ -46,11 +50,6 @@ final class L2CAPStreamHandler: NSObject, StreamDelegate {
         guard !closed else { return }
         outbox.append(MessageFraming.frame(payload))
         flush()
-    }
-
-    /// Drop everything queued to send (used to abort an in-flight file transfer).
-    func clearOutbox() {
-        outbox.removeAll(keepingCapacity: false)
     }
 
     func close() {
@@ -81,19 +80,23 @@ final class L2CAPStreamHandler: NSObject, StreamDelegate {
 
     private func flush() {
         guard !closed else { return }
-        let hadData = !outbox.isEmpty
-        while !outbox.isEmpty, output.hasSpaceAvailable {
-            let written = outbox.withUnsafeBytes { raw -> Int in
-                guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return 0 }
-                return output.write(base, maxLength: outbox.count)
+        while true {
+            while !outbox.isEmpty, output.hasSpaceAvailable {
+                let written = outbox.withUnsafeBytes { raw -> Int in
+                    guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return 0 }
+                    return output.write(base, maxLength: outbox.count)
+                }
+                if written > 0 { outbox.removeSubrange(0..<written) } else { break }
             }
-            if written > 0 {
-                outbox.removeSubrange(0..<written)
-            } else {
-                break
+            // Buffer drained and there's room: pull the next file chunk and keep going.
+            if outbox.isEmpty, output.hasSpaceAvailable, let payload = nextChunk?() {
+                outbox.append(MessageFraming.frame(payload))
+                continue
             }
+            break
         }
-        if hadData, outbox.isEmpty, let drained = onDrained {
+        // Fully drained with nothing left to produce → the send is complete.
+        if outbox.isEmpty, let drained = onDrained {
             onDrained = nil
             drained()
         }

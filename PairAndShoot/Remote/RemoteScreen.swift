@@ -291,7 +291,7 @@ private struct ControlDeck: View {
                 Button {
                     ExternalApp.openPhotos()
                 } label: {
-                    CaptureThumbnail(result: model.lastCapture, size: 200)
+                    CaptureThumbnail(result: model.lastCapture, size: 300)
                 }
                 .buttonStyle(.plain)
                 if let capture = model.lastCapture, model.canDownloadFullFile(capture) {

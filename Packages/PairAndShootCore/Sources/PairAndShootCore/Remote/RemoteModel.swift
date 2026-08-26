@@ -196,8 +196,12 @@ public final class RemoteModel {
     /// it was shot over a Bluetooth-only link. The UI offers a download; the camera also sends it
     /// automatically if a Wi-Fi lane appears.
     public func canDownloadFullFile(_ capture: CaptureResult) -> Bool {
-        capture.fileAvailable && !isDownloaded(capture) && !isDownloading(capture)
+        // One download at a time — starting another would clobber the in-flight Bluetooth transfer.
+        downloadingCaptureID == nil && capture.fileAvailable && !isDownloaded(capture)
     }
+
+    /// Whether a file is transferring right now (used to keep the UI from starting an overlapping one).
+    public var isReceivingFile: Bool { downloadingCaptureID != nil }
 
     public func isDownloading(_ capture: CaptureResult) -> Bool { downloadingCaptureID == capture.id }
     public func isDownloaded(_ capture: CaptureResult) -> Bool { downloadedCaptureIDs.contains(capture.id) }

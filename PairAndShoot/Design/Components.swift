@@ -24,29 +24,31 @@ struct ControlButton: View {
 
     var body: some View {
         Button(action: action) {
-            ZStack(alignment: .bottomTrailing) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundStyle(isActive ? Color.black : Color.white)
-                    .frame(width: 48, height: 48)
-                    .background {
-                        if isActive { Circle().fill(.white) }
-                    }
-                if let badge {
-                    Text(badge)
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .foregroundStyle(.black)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(Color.yellow, in: Capsule())
-                        .offset(x: 4, y: 2)
+            Image(systemName: systemImage)
+                .font(.system(size: 19, weight: .semibold))
+                .foregroundStyle(isActive ? Color.black : Color.white)
+                .frame(width: 48, height: 48)
+                .background {
+                    if isActive { Circle().fill(.white) }
                 }
-            }
-            .modifier(GlassBackground())
-            // The visible control stays 48pt; the extra padding widens the tap target to ~56pt so
-            // it isn't easy to miss (the close button especially, sitting over the live preview).
-            .padding(4)
-            .contentShape(Rectangle())
+                .modifier(GlassBackground())
+                // The badge sits ON TOP of the glass as an overlay; keeping it inside the glass layer
+                // let the tap re-composite momentarily draw it behind the button.
+                .overlay(alignment: .bottomTrailing) {
+                    if let badge {
+                        Text(badge)
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.yellow, in: Capsule())
+                            .offset(x: 4, y: 2)
+                    }
+                }
+                // The visible control stays 48pt; the extra padding widens the tap target to ~56pt so
+                // it isn't easy to miss (the close button especially, sitting over the live preview).
+                .padding(4)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!isEnabled)
@@ -300,28 +302,28 @@ struct TransferBanner: View {
     }
 }
 
-/// Shows a transfer while it runs and for a moment after it finishes.
+/// Shows a transfer live while it runs (progress updates as it goes) and hides a moment after it
+/// finishes. Bound directly to `transfer` so the progress bar tracks every update.
 struct TransferBannerHost: View {
     let transfer: TransferStatus?
-    @State private var shown: TransferStatus?
+    @State private var hidden = false
+    @State private var hideTask: Task<Void, Never>?
 
     var body: some View {
         Group {
-            if let shown {
-                TransferBanner(status: shown)
+            if let transfer, !hidden {
+                TransferBanner(status: transfer)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.easeOut(duration: 0.2), value: shown)
-        .task(id: transfer) {
-            guard let transfer else {
-                shown = nil
-                return
-            }
-            shown = transfer
-            if transfer.isFinished {
+        .animation(.easeOut(duration: 0.2), value: transfer == nil || hidden)
+        .onChange(of: transfer) { _, new in
+            hideTask?.cancel()
+            hidden = false
+            guard let new, new.isFinished else { return }
+            hideTask = Task {
                 try? await Task.sleep(for: .seconds(2.5))
-                if !Task.isCancelled { shown = nil }
+                if !Task.isCancelled { hidden = true }
             }
         }
     }
