@@ -168,6 +168,21 @@ import Testing
         #expect(transport.sentFiles.first?.name == TransferName.make(id: result.id, ext: "jpg"))
     }
 
+    @Test func failedAutoSendBecomesDownloadable() async throws {
+        let model = await connectedModel()
+        transport.emit(.fileChannelFast(true))   // fast lane up → auto-send
+        _ = await waitUntil { model.fileChannelFast == true }
+        try command(.capturePhoto(sendBack: true, delay: 0))
+        #expect(await waitUntil { model.captures.count == 1 })
+        let sent = try #require(transport.sentFiles.first)
+        #expect(model.captures[0].willSendFile)
+        #expect(!model.captures[0].fileAvailable)
+        // The Wi-Fi send fails (the fast lane dropped mid-transfer) → re-offered as a download.
+        transport.emit(.fileSendFinished(name: sent.name, error: "connection lost"))
+        #expect(await waitUntil { model.captures[0].fileAvailable })
+        #expect(!model.captures[0].willSendFile)
+    }
+
     @Test func canReRequestAfterCancel() async throws {
         let model = await connectedModel()
         transport.emit(.fileChannelFast(false))

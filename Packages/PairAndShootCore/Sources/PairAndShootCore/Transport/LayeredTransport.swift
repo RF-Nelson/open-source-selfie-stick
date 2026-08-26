@@ -170,6 +170,33 @@ public final class LayeredTransport: PeerTransport, @unchecked Sendable {
         wifi.disconnect()
     }
 
+    /// After the fast lane drops (AWDL is flaky), try to bring it back — the camera re-advertises and
+    /// the remote re-browses with the same token — so it recovers on its own and deferred files flush
+    /// when it returns. A short delay avoids churning if it's flapping quickly.
+    private func scheduleWiFiRestart() {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            self?.restartWiFiLeg()
+        }
+    }
+
+    private func restartWiFiLeg() {
+        let (role, token, connected, up) = lock.withLock { (self.role, self.token, primaryPeer != nil, wifiUp) }
+        guard connected, !up, let token else { return }   // BLE still up, fast lane still down
+        switch role {
+        case .camera:
+            var info = Pairing.advertisingInfo()
+            info[Self.tokenKey] = token
+            Trace.log("layered: re-advertising Wi-Fi fast lane after a drop")
+            wifi.startAdvertising(discoveryInfo: info)
+        case .remote:
+            Trace.log("layered: re-browsing for the Wi-Fi fast lane after a drop")
+            wifi.startBrowsing()
+        case .none:
+            break
+        }
+    }
+
     // MARK: Wi-Fi (fast lane) events — internal, never surfaced as a second connection
 
     private func handleWiFi(_ event: TransportEvent) {
@@ -202,6 +229,7 @@ public final class LayeredTransport: PeerTransport, @unchecked Sendable {
             if dropped {
                 Trace.log("layered: Wi-Fi fast lane down — files fall back to Bluetooth")
                 continuation.yield(.fileChannelFast(false))
+                scheduleWiFiRestart()
             }
         case .fileReceiveStarted, .fileReceiveProgress, .fileReceived, .fileReceiveFailed,
              .fileSendProgress, .fileSendFinished:

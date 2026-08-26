@@ -462,6 +462,16 @@ public final class CameraHostModel {
             // Keep the held file (and any transient compressed copy) so a capture can be re-downloaded
             // — e.g. after the remote cancels. Everything is wiped on disconnect.
             outgoingTransfer = TransferStatus(name: name, fraction: 1, phase: error.map { .failed($0) } ?? .sent)
+            // If an automatic Wi-Fi send failed (the fast lane dropped mid-transfer), re-offer the
+            // capture as a Bluetooth download instead of stranding it: flip it to "available" and tell
+            // the remote so a download button appears; it also flushes if a Wi-Fi lane returns.
+            if error != nil, let (id, _) = TransferName.parse(name), heldFiles[id] != nil,
+               let index = captures.firstIndex(where: { $0.id == id }), captures[index].willSendFile {
+                captures[index].willSendFile = false
+                captures[index].fileAvailable = true
+                pendingCaptureIDs.insert(id)
+                send(.captureFinished(captures[index]))
+            }
         case .fileChannelFast(let fast):
             fileChannelFast = fast
             if fast { flushHeldFiles() }

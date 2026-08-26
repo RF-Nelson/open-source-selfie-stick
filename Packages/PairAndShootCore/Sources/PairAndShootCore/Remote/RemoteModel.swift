@@ -394,9 +394,13 @@ public final class RemoteModel {
         case .state(let state):
             cameraState = state
         case .captureFinished(let result):
-            captures.append(result)
-            if !result.willSendFile {
-                show(result.kind == .photo ? "Photo saved on the camera." : "Video saved on the camera.")
+            if let index = captures.firstIndex(where: { $0.id == result.id }) {
+                captures[index] = result   // an update — e.g. a stranded auto-send is now downloadable
+            } else {
+                captures.append(result)
+                if !result.willSendFile {
+                    show(result.kind == .photo ? "Photo saved on the camera." : "Video saved on the camera.")
+                }
             }
         case .captureFailed(let reason):
             show(reason)
