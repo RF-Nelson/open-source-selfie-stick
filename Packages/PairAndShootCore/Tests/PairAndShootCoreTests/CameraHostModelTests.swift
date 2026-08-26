@@ -136,15 +136,44 @@ import Testing
         #expect(device.photoCount == 1)
         #expect(store.photos == [Data("fake-photo-1".utf8)])
         let sent = try #require(transport.sentFiles.first)
-        #expect(sent.name.hasPrefix("IMG_") && sent.name.hasSuffix(".jpg"))
+        #expect(sent.name.hasSuffix(".jpg"))
         #expect(sent.peer.id == "remote")
         let result = try #require(transport.lastCaptureResult)
         #expect(result.willSendFile)
-        #expect(result.fileName == sent.name)
+        #expect(result.fileName?.hasPrefix("IMG_") == true)
+        // The transfer is named by capture id (so the remote can correlate it), not the display name.
+        #expect(sent.name == TransferName.make(id: result.id, ext: "jpg"))
         #expect(await waitUntil { model.outgoingTransfer?.phase == .sent })
         #expect(!FileManager.default.fileExists(atPath: sent.url.path))
         #expect(transport.sentStates.contains { $0.isBusy })
         #expect(model.state.isBusy == false)
+    }
+
+    @Test func bluetoothOnlyDefersTheFileUntilRequested() async throws {
+        let model = await connectedModel()
+        transport.emit(.fileChannelFast(false))   // a Bluetooth-only link, no Wi-Fi fast lane
+        _ = await waitUntil { model.fileChannelFast == false }
+        try command(.capturePhoto(sendBack: true, delay: 0))
+        #expect(await waitUntil { model.captures.count == 1 })
+        let result = try #require(transport.lastCaptureResult)
+        #expect(!result.willSendFile)              // deferred, not slow-pushed over Bluetooth
+        #expect(result.fileAvailable)
+        #expect(transport.sentFiles.isEmpty)
+        // The remote asks for it → the camera sends it.
+        try command(.requestFile(id: result.id, quality: .full))
+        #expect(await waitUntil { transport.sentFiles.count == 1 })
+        #expect(transport.sentFiles.first?.name == TransferName.make(id: result.id, ext: "jpg"))
+    }
+
+    @Test func deferredFilesFlushWhenAFastLaneAppears() async throws {
+        let model = await connectedModel()
+        transport.emit(.fileChannelFast(false))
+        _ = await waitUntil { model.fileChannelFast == false }
+        try command(.capturePhoto(sendBack: true, delay: 0))
+        #expect(await waitUntil { model.captures.count == 1 })
+        #expect(transport.sentFiles.isEmpty)
+        transport.emit(.fileChannelFast(true))     // Wi-Fi lane comes up → deferred files flush
+        #expect(await waitUntil { transport.sentFiles.count == 1 })
     }
 
     @Test func keepsCopiesOffSkipsTheLocalSave() async throws {

@@ -49,7 +49,7 @@ import Testing
             try codec.decode(Data("not json".utf8))
         }
         #expect(throws: MessageCodecError.malformed) {
-            try codec.decode(Data("{\"version\":2,\"message\":{\"command\":{\"teleport\":{}}}}".utf8))
+            try codec.decode(Data("{\"version\":\(WireProtocol.version),\"message\":{\"command\":{\"teleport\":{}}}}".utf8))
         }
     }
 

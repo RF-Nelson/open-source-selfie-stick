@@ -48,6 +48,11 @@ final class L2CAPStreamHandler: NSObject, StreamDelegate {
         flush()
     }
 
+    /// Drop everything queued to send (used to abort an in-flight file transfer).
+    func clearOutbox() {
+        outbox.removeAll(keepingCapacity: false)
+    }
+
     func close() {
         guard !closed else { return }
         closed = true

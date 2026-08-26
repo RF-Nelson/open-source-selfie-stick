@@ -40,7 +40,7 @@ public final class BluetoothTransport: NSObject, PeerTransport, @unchecked Senda
 
     /// First byte of every L2CAP frame's payload: separates control messages from file transfer, which
     /// share the one stream.
-    private enum FrameTag: UInt8 { case message = 0, fileBegin = 1, fileChunk = 2, fileEnd = 3 }
+    private enum FrameTag: UInt8 { case message = 0, fileBegin = 1, fileChunk = 2, fileEnd = 3, fileCancel = 4 }
 
     private struct FileHeader: Codable { let name: String; let size: Int }
 
@@ -185,6 +185,13 @@ public final class BluetoothTransport: NSObject, PeerTransport, @unchecked Senda
         return payload
     }
 
+    public func cancelFileSend() {
+        guard let handler = lock.withLock({ streamHandler }) else { return }
+        handler.clearOutbox()
+        handler.onDrained = nil
+        handler.send(tagged(.fileCancel, Data()))
+    }
+
     public func disconnect() {
         let (peripheral, central, peripheralManager) = lock.withLock {
             (connectingPeripheral ?? peripheralForConnectedPeer(), centralManager, self.peripheralManager)
@@ -264,6 +271,13 @@ public final class BluetoothTransport: NSObject, PeerTransport, @unchecked Senda
             let kbps = seconds > 0 ? Double(file.received) / 1024.0 / seconds : 0
             Trace.log("ble: file \(file.name) received \(file.received) bytes in \(Int(seconds * 1000)) ms (\(Int(kbps)) KB/s)")
             continuation.yield(.fileReceived(name: file.name, url: file.url, from: peer))
+        case .fileCancel:
+            guard let file = incomingFile else { return }
+            try? file.handle.close()
+            try? FileManager.default.removeItem(at: file.url)
+            incomingFile = nil
+            Trace.log("ble: file \(file.name) cancelled by sender")
+            continuation.yield(.fileReceiveFailed(name: file.name, error: "Cancelled"))
         }
     }
 

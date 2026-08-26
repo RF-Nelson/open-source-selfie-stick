@@ -3,7 +3,7 @@ import Foundation
 /// Facts about the wire protocol that both roles must agree on.
 public enum WireProtocol {
     /// Bump when a change breaks older peers. Peers with a different version refuse to talk.
-    public static let version = 2
+    public static let version = 3
     /// Bonjour service type used for discovery: 1–15 characters, lowercase letters, digits, hyphens.
     public static let serviceType = "pairandshoot"
     /// The entries the app must declare under `NSBonjourServices` in Info.plist.
@@ -106,6 +106,26 @@ public enum CaptureKind: String, Codable, Sendable, Hashable {
     case photo, video
 }
 
+/// How the remote wants a deferred capture delivered. `full` is the original file; the others are
+/// smaller JPEGs the camera re-encodes on the fly so they move over Bluetooth quickly.
+public enum TransferQuality: String, Codable, Sendable, CaseIterable, Hashable {
+    case full, high, medium
+}
+
+/// File transfers name their payload `<captureID>.<ext>` so the receiver can tie an arriving file back
+/// to the exact capture (and pick photo vs. video from the extension), regardless of quality.
+public enum TransferName {
+    public static func make(id: UUID, ext: String) -> String {
+        "\(id.uuidString).\(ext.isEmpty ? "dat" : ext)"
+    }
+
+    public static func parse(_ name: String) -> (id: UUID, ext: String)? {
+        guard let dot = name.lastIndex(of: "."),
+              let id = UUID(uuidString: String(name[..<dot])) else { return nil }
+        return (id, String(name[name.index(after: dot)...]))
+    }
+}
+
 /// What the camera reports after a capture. Small enough to travel as a message; the file itself
 /// (if the remote asked for it) travels separately as a resource transfer with the same `fileName`.
 public struct CaptureResult: Codable, Sendable, Hashable, Identifiable {
@@ -113,18 +133,23 @@ public struct CaptureResult: Codable, Sendable, Hashable, Identifiable {
     public var kind: CaptureKind
     public var byteCount: Int
     public var willSendFile: Bool
+    /// The camera is holding the full file and can send it on request, but hasn't (only a slow
+    /// Bluetooth link was up when it was captured). The remote shows a "download" affordance; the file
+    /// also flushes automatically if a fast Wi-Fi link appears.
+    public var fileAvailable: Bool
     public var fileName: String?
     public var duration: TimeInterval?
     /// A small JPEG preview so the remote can show what was just shot even when it declined the file.
     public var thumbnailJPEG: Data?
     public var capturedAt: Date
 
-    public init(id: UUID = UUID(), kind: CaptureKind, byteCount: Int, willSendFile: Bool, fileName: String? = nil,
-                duration: TimeInterval? = nil, thumbnailJPEG: Data? = nil, capturedAt: Date = Date()) {
+    public init(id: UUID = UUID(), kind: CaptureKind, byteCount: Int, willSendFile: Bool, fileAvailable: Bool = false,
+                fileName: String? = nil, duration: TimeInterval? = nil, thumbnailJPEG: Data? = nil, capturedAt: Date = Date()) {
         self.id = id
         self.kind = kind
         self.byteCount = byteCount
         self.willSendFile = willSendFile
+        self.fileAvailable = fileAvailable
         self.fileName = fileName
         self.duration = duration
         self.thumbnailJPEG = thumbnailJPEG
@@ -143,6 +168,11 @@ public enum RemoteCommand: Codable, Sendable, Hashable {
     case setMode(CaptureMode)
     case setPosition(CameraPosition)
     case setFlash(FlashMode)
+    /// Ask the camera to send a capture it's holding (deferred because only Bluetooth was up), at the
+    /// chosen quality. The camera re-encodes photos smaller for the compressed qualities.
+    case requestFile(id: UUID, quality: TransferQuality)
+    /// Abort an in-flight or pending file transfer for this capture.
+    case cancelTransfer(id: UUID)
     case ping
 }
 

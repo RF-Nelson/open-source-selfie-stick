@@ -42,6 +42,7 @@ public enum TransportError: Error, Sendable, Equatable {
 }
 
 public extension PeerTransport {
+    func cancelFileSend() {}
     var requiresAppLevelPairing: Bool { true }
     /// Whether this link can carry full-resolution photos/videos back to the remote. True for Wi-Fi
     /// transports; false for Bluetooth (too slow), so the camera captures and saves locally without
@@ -72,5 +73,7 @@ public protocol PeerTransport: AnyObject, Sendable {
     func invite(_ peer: Peer, context: Data?, timeout: TimeInterval)
     func send(_ data: Data, to peers: [Peer]) throws
     func sendFile(at url: URL, named name: String, to peer: Peer)
+    /// Abort the file send currently in flight, if any (used when the user cancels a slow download).
+    func cancelFileSend()
     func disconnect()
 }

@@ -75,7 +75,12 @@ public final class CameraHostModel {
     @ObservationIgnored private var recordingTicker: Task<Void, Never>?
     @ObservationIgnored private var noticeTask: Task<Void, Never>?
     @ObservationIgnored private var pendingVideoSendBack = false
-    @ObservationIgnored private var outgoingFiles: [String: URL] = [:]
+    /// Files the camera is holding for a capture, keyed by capture id — either about to be sent, or
+    /// deferred (only Bluetooth was up) until the remote asks or a Wi-Fi lane appears.
+    private struct HeldFile { let url: URL; let kind: CaptureKind; let photoData: Data? }
+    @ObservationIgnored private var heldFiles: [UUID: HeldFile] = [:]
+    /// Captures whose full file is deferred, waiting for a request or a fast link.
+    @ObservationIgnored private var pendingCaptureIDs: Set<UUID> = []
     @ObservationIgnored private var expectsDisconnect = false
 
     public init(transport: any PeerTransport,
@@ -181,6 +186,11 @@ public final class CameraHostModel {
             guard flash != state.flash else { return }
             guard flash == .off || capabilities.hasFlash else { return }
             await update { $0.flash = flash }
+        case .requestFile(let id, let quality):
+            pendingCaptureIDs.remove(id)
+            await sendHeldFile(id: id, quality: quality)
+        case .cancelTransfer(let id):
+            cancelHeldSend(id: id)
         case .ping:
             send(.pong)
         }
@@ -286,12 +296,20 @@ public final class CameraHostModel {
             let photo = try await device.capturePhoto()
             let name = "IMG_\(Self.stamp()).\(photo.fileExtension)"
             var result = CaptureResult(kind: .photo, byteCount: photo.data.count, willSendFile: false, fileName: name)
-            if sendBack, transport.supportsFileTransfer, case .connected(let peer, _) = link {
-                let url = try writeOutgoing(photo.data, name: name)
-                outgoingFiles[name] = url
-                outgoingTransfer = TransferStatus(name: name, fraction: 0, phase: .sending)
-                transport.sendFile(at: url, named: name, to: peer)
-                result.willSendFile = true
+            if sendBack, transport.supportsFileTransfer, case .connected = link {
+                let url = try writeOutgoing(photo.data, name: TransferName.make(id: result.id, ext: photo.fileExtension))
+                heldFiles[result.id] = HeldFile(url: url, kind: .photo, photoData: photo.data)
+                if fileChannelFast == false {
+                    // Bluetooth-only link (no Wi-Fi lane): hold it. The remote can request it, and it
+                    // flushes automatically if a Wi-Fi lane appears.
+                    pendingCaptureIDs.insert(result.id)
+                    result.fileAvailable = true
+                } else {
+                    // Fast link (a Wi-Fi lane, or a single-channel Wi-Fi transport that never reports
+                    // a slow state): send the original now.
+                    await sendHeldFile(id: result.id)
+                    result.willSendFile = true
+                }
             }
             if keepsCopies {
                 try await mediaStore.savePhoto(data: photo.data, fileExtension: photo.fileExtension)
@@ -357,17 +375,23 @@ public final class CameraHostModel {
             let name = "VID_\(Self.stamp()).\(movie.url.pathExtension.isEmpty ? "mov" : movie.url.pathExtension)"
             let size = (try? FileManager.default.attributesOfItem(atPath: movie.url.path)[.size] as? Int) ?? 0
             var result = CaptureResult(kind: .video, byteCount: size, willSendFile: false, fileName: name, duration: movie.duration)
-            if pendingVideoSendBack, transport.supportsFileTransfer, case .connected(let peer, _) = link {
-                outgoingFiles[name] = movie.url
-                outgoingTransfer = TransferStatus(name: name, fraction: 0, phase: .sending)
-                transport.sendFile(at: movie.url, named: name, to: peer)
-                result.willSendFile = true
+            var held = false
+            if pendingVideoSendBack, transport.supportsFileTransfer, case .connected = link {
+                heldFiles[result.id] = HeldFile(url: movie.url, kind: .video, photoData: nil)
+                held = true
+                if fileChannelFast == false {
+                    pendingCaptureIDs.insert(result.id)
+                    result.fileAvailable = true
+                } else {
+                    await sendHeldFile(id: result.id)
+                    result.willSendFile = true
+                }
             }
             if keepsCopies {
                 try await mediaStore.saveVideo(fileURL: movie.url)
             }
             result.thumbnailJPEG = await thumbnails.thumbnail(forVideoAt: movie.url)
-            if !result.willSendFile {
+            if !held {
                 try? FileManager.default.removeItem(at: movie.url)
             }
             captures.append(result)
@@ -421,6 +445,7 @@ public final class CameraHostModel {
             pairingTimeoutTask = nil
             link = .none
             fileChannelFast = nil
+            discardHeldFiles()
             if state.countdown != nil { captureTask?.cancel() }
             if availability == .ready { advertise() }
             if expectsDisconnect {
@@ -434,12 +459,13 @@ public final class CameraHostModel {
         case .fileSendProgress(let name, let fraction):
             outgoingTransfer = TransferStatus(name: name, fraction: fraction, phase: .sending)
         case .fileSendFinished(let name, let error):
-            if let url = outgoingFiles.removeValue(forKey: name) {
-                try? FileManager.default.removeItem(at: url)
+            if let (id, _) = TransferName.parse(name), let held = heldFiles.removeValue(forKey: id) {
+                try? FileManager.default.removeItem(at: held.url)
             }
             outgoingTransfer = TransferStatus(name: name, fraction: 1, phase: error.map { .failed($0) } ?? .sent)
         case .fileChannelFast(let fast):
             fileChannelFast = fast
+            if fast { flushHeldFiles() }
         case .failure(let message):
             show(message)
         case .peerFound, .peerLost, .fileReceiveStarted, .fileReceiveProgress, .fileReceived, .fileReceiveFailed:
@@ -492,6 +518,52 @@ public final class CameraHostModel {
         let url = directory.appendingPathComponent(name)
         try data.write(to: url, options: .atomic)
         return url
+    }
+
+    /// Send a held capture's file to the connected remote, re-encoding photos smaller for the
+    /// compressed qualities (falling back to the original if that isn't possible).
+    private func sendHeldFile(id: UUID, quality: TransferQuality = .full) async {
+        guard case .connected(let peer, _) = link, let held = heldFiles[id] else { return }
+        if quality != .full, held.kind == .photo, let photoData = held.photoData,
+           let compressed = await thumbnails.compressedPhoto(data: photoData, quality: quality),
+           let url = try? writeOutgoing(compressed, name: TransferName.make(id: id, ext: "jpg")) {
+            try? FileManager.default.removeItem(at: held.url)
+            heldFiles[id] = HeldFile(url: url, kind: .photo, photoData: photoData)
+            let name = TransferName.make(id: id, ext: "jpg")
+            outgoingTransfer = TransferStatus(name: name, fraction: 0, phase: .sending)
+            transport.sendFile(at: url, named: name, to: peer)
+            return
+        }
+        var ext = held.url.pathExtension
+        if ext.isEmpty { ext = held.kind == .video ? "mov" : "dat" }
+        let name = TransferName.make(id: id, ext: ext)
+        outgoingTransfer = TransferStatus(name: name, fraction: 0, phase: .sending)
+        transport.sendFile(at: held.url, named: name, to: peer)
+    }
+
+    /// A fast link appeared — deliver everything that was waiting on Bluetooth, at full quality.
+    private func flushHeldFiles() {
+        let ids = pendingCaptureIDs
+        pendingCaptureIDs.removeAll()
+        for id in ids {
+            Task { await sendHeldFile(id: id) }
+        }
+    }
+
+    /// Stop delivering a capture the remote cancelled — abort an in-flight send and drop the held file.
+    private func cancelHeldSend(id: UUID) {
+        pendingCaptureIDs.remove(id)
+        transport.cancelFileSend()
+        if let held = heldFiles.removeValue(forKey: id) {
+            try? FileManager.default.removeItem(at: held.url)
+        }
+        outgoingTransfer = nil
+    }
+
+    private func discardHeldFiles() {
+        for held in heldFiles.values { try? FileManager.default.removeItem(at: held.url) }
+        heldFiles.removeAll()
+        pendingCaptureIDs.removeAll()
     }
 
     private static func stamp() -> String {

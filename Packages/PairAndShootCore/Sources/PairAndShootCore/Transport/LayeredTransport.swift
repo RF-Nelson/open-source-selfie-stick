@@ -93,6 +93,12 @@ public final class LayeredTransport: PeerTransport, @unchecked Sendable {
         }
     }
 
+    public func cancelFileSend() {
+        // The file is on one leg or the other; cancelling the idle leg is harmless.
+        ble.cancelFileSend()
+        wifi.cancelFileSend()
+    }
+
     public func disconnect() {
         ble.disconnect()
         teardownWiFi()

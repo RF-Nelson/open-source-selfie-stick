@@ -23,6 +23,7 @@ public final class MultipeerTransport: NSObject, PeerTransport, @unchecked Senda
     private var discoveryInfoByID: [String: [String: String]] = [:]
     private var progressObservations: [String: NSKeyValueObservation] = [:]
     private var fileStartTimes: [String: Date] = [:]
+    private var activeSendProgress: Progress?
     private let inboxDirectory: URL
     private let log = Logger(subsystem: "com.richardnelson.opensourceselfiestick", category: "mc")
 
@@ -143,6 +144,7 @@ public final class MultipeerTransport: NSObject, PeerTransport, @unchecked Senda
         Trace.log("mc: sending file \(name) — \(byteCount) bytes")
         let progress = session.sendResource(at: url, withName: name, toPeer: peerID) { [weak self] error in
             self?.endObservation(key: key)
+            self?.lock.withLock { self?.activeSendProgress = nil }
             if let error {
                 Trace.log("mc: file \(name) send failed: \(error.localizedDescription)")
             } else {
@@ -152,9 +154,19 @@ public final class MultipeerTransport: NSObject, PeerTransport, @unchecked Senda
             }
             continuation.yield(.fileSendFinished(name: name, error: error?.localizedDescription))
         }
+        lock.withLock { activeSendProgress = progress }
         observe(progress, key: key) { fraction in
             continuation.yield(.fileSendProgress(name: name, fraction: fraction))
         }
+    }
+
+    public func cancelFileSend() {
+        let progress = lock.withLock { () -> Progress? in
+            let progress = activeSendProgress
+            activeSendProgress = nil
+            return progress
+        }
+        progress?.cancel()
     }
 
     public func disconnect() {

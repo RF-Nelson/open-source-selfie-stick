@@ -198,6 +198,7 @@ private struct ConnectingView: View {
 private struct ControlDeck: View {
     let model: RemoteModel
     @Binding var showSettings: Bool
+    @State private var downloadTarget: CaptureResult?
 
     var body: some View {
         let state = model.cameraState
@@ -238,6 +239,30 @@ private struct ControlDeck: View {
         .padding(.horizontal, 24)
         .frame(maxWidth: 480)
         .frame(maxWidth: .infinity)
+        .confirmationDialog(
+            "Download over Bluetooth?",
+            isPresented: Binding(get: { downloadTarget != nil }, set: { if !$0 { downloadTarget = nil } }),
+            presenting: downloadTarget
+        ) { capture in
+            if capture.kind == .photo {
+                Button("Full quality · ~\(model.estimatedBluetoothSeconds(for: capture, quality: .full)) sec") {
+                    model.requestFullFile(capture, quality: .full)
+                }
+                Button("Reduced · ~\(model.estimatedBluetoothSeconds(for: capture, quality: .high)) sec") {
+                    model.requestFullFile(capture, quality: .high)
+                }
+                Button("Small · ~\(model.estimatedBluetoothSeconds(for: capture, quality: .medium)) sec") {
+                    model.requestFullFile(capture, quality: .medium)
+                }
+            } else {
+                Button("Download · ~\(model.estimatedBluetoothSeconds(for: capture)) sec") {
+                    model.requestFullFile(capture, quality: .full)
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: { capture in
+            Text("You're connected over Bluetooth, so this \(ByteCountFormatter.string(fromByteCount: Int64(capture.byteCount), countStyle: .file)) \(capture.kind == .video ? "video" : "photo") takes about \(model.estimatedBluetoothSeconds(for: capture)) seconds. On the same Wi-Fi it would arrive in a second or two.")
+        }
     }
 
     @ViewBuilder
@@ -269,6 +294,25 @@ private struct ControlDeck: View {
                     CaptureThumbnail(result: model.lastCapture, size: 200)
                 }
                 .buttonStyle(.plain)
+                if let capture = model.lastCapture, model.canDownloadFullFile(capture) {
+                    Button {
+                        downloadTarget = capture
+                    } label: {
+                        Label("Download full \(capture.kind == .video ? "video" : "photo")", systemImage: "arrow.down.circle.fill")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Theme.success)
+                } else if let capture = model.lastCapture, model.isDownloading(capture) {
+                    Button(role: .destructive) {
+                        model.cancelDownload(capture)
+                    } label: {
+                        Label("Cancel download", systemImage: "xmark.circle")
+                            .font(.subheadline.weight(.semibold))
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.white)
+                }
                 Button {
                     ExternalApp.openPhotos()
                 } label: {

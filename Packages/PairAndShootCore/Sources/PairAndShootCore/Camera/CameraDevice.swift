@@ -65,10 +65,18 @@ public protocol CameraDevice: AnyObject, Sendable {
     func recordingDuration() async -> TimeInterval
 }
 
-/// Produces the small JPEG previews that travel inside `CaptureResult`.
+/// Produces the small JPEG previews that travel inside `CaptureResult`, and re-encodes photos smaller
+/// for a fast Bluetooth transfer.
 public protocol ThumbnailMaker: Sendable {
     func thumbnail(forPhoto data: Data) async -> Data?
     func thumbnail(forVideoAt url: URL) async -> Data?
+    /// Re-encode a photo smaller for a quicker transfer. `quality == .full` (or an unsupported case)
+    /// returns nil, meaning "send the original".
+    func compressedPhoto(data: Data, quality: TransferQuality) async -> Data?
+}
+
+public extension ThumbnailMaker {
+    func compressedPhoto(data: Data, quality: TransferQuality) async -> Data? { nil }
 }
 
 public struct NoThumbnails: ThumbnailMaker {

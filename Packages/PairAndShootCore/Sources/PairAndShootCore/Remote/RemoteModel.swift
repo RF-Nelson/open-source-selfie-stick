@@ -37,6 +37,10 @@ public final class RemoteModel {
     /// The current file-transfer channel while connected: false = Bluetooth only, true = Bluetooth + a
     /// fast Wi-Fi lane. nil when the transport is single-channel (Wi-Fi Aware) or not connected.
     public private(set) var fileChannelFast: Bool?
+    /// Captures whose full-resolution file has arrived and been saved here.
+    private var downloadedCaptureIDs: Set<UUID> = []
+    /// The capture whose file is transferring right now (auto over Wi-Fi, or a Bluetooth download).
+    private var downloadingCaptureID: UUID?
 
     public var timerSeconds = 0
     public var sendBackPhotos = true
@@ -186,6 +190,45 @@ public final class RemoteModel {
         notice = nil
     }
 
+    // MARK: Deferred downloads
+
+    /// True when the camera is holding this capture's full file and it hasn't arrived here yet — i.e.
+    /// it was shot over a Bluetooth-only link. The UI offers a download; the camera also sends it
+    /// automatically if a Wi-Fi lane appears.
+    public func canDownloadFullFile(_ capture: CaptureResult) -> Bool {
+        capture.fileAvailable && !isDownloaded(capture) && !isDownloading(capture)
+    }
+
+    public func isDownloading(_ capture: CaptureResult) -> Bool { downloadingCaptureID == capture.id }
+    public func isDownloaded(_ capture: CaptureResult) -> Bool { downloadedCaptureIDs.contains(capture.id) }
+
+    /// Roughly how long this capture would take over Bluetooth (~28 KB/s) at the given quality. The
+    /// compressed qualities are estimated from typical re-encode ratios (photos only).
+    public func estimatedBluetoothSeconds(for capture: CaptureResult, quality: TransferQuality = .full) -> Int {
+        let factor: Double
+        switch quality {
+        case .full: factor = 1
+        case .high: factor = capture.kind == .photo ? 0.4 : 1
+        case .medium: factor = capture.kind == .photo ? 0.15 : 1
+        }
+        return max(1, Int((Double(capture.byteCount) * factor / 1024.0) / 28.0))
+    }
+
+    /// Ask the camera to send a deferred capture, at the given quality.
+    public func requestFullFile(_ capture: CaptureResult, quality: TransferQuality = .full) {
+        guard canDownloadFullFile(capture) else { return }
+        downloadingCaptureID = capture.id
+        transfer = TransferStatus(name: TransferName.make(id: capture.id, ext: "dat"), fraction: 0, phase: .receiving)
+        send(.requestFile(id: capture.id, quality: quality))
+    }
+
+    /// Stop a download the user started.
+    public func cancelDownload(_ capture: CaptureResult) {
+        send(.cancelTransfer(id: capture.id))
+        if downloadingCaptureID == capture.id { downloadingCaptureID = nil }
+        transfer = nil
+    }
+
     // MARK: Events
 
     private func send(_ command: RemoteCommand) {
@@ -227,6 +270,7 @@ public final class RemoteModel {
             cameraState = nil
             didReceiveChallenge = false
             fileChannelFast = nil
+            downloadingCaptureID = nil
             if expectsDisconnect {
                 expectsDisconnect = false
                 isReconnecting = false
@@ -252,13 +296,17 @@ public final class RemoteModel {
             guard connection.peer?.id == peer.id else { return }
             handleMessage(data)
         case .fileReceiveStarted(let name, _):
+            downloadingCaptureID = TransferName.parse(name)?.id
             transfer = TransferStatus(name: name, fraction: 0, phase: .receiving)
         case .fileReceiveProgress(let name, let fraction):
             if transfer?.name == name { transfer?.fraction = fraction }
         case .fileReceived(let name, let url, _):
-            Task { await save(name: name, from: url) }
+            let id = TransferName.parse(name)?.id
+            Task { await save(name: name, from: url, captureID: id) }
         case .fileReceiveFailed(let name, let error):
-            transfer = TransferStatus(name: name, fraction: 0, phase: .failed(error))
+            if downloadingCaptureID == TransferName.parse(name)?.id { downloadingCaptureID = nil }
+            // A cancel (by either side) isn't a failure worth alarming the user about.
+            transfer = error.lowercased().contains("cancel") ? nil : TransferStatus(name: name, fraction: 0, phase: .failed(error))
         case .fileSendProgress, .fileSendFinished:
             break
         case .fileChannelFast(let fast):
@@ -324,9 +372,12 @@ public final class RemoteModel {
         }
     }
 
-    private func save(name: String, from url: URL) async {
+    private func save(name: String, from url: URL, captureID: UUID? = nil) async {
         transfer = TransferStatus(name: name, fraction: 1, phase: .saving)
-        defer { try? FileManager.default.removeItem(at: url) }
+        defer {
+            try? FileManager.default.removeItem(at: url)
+            if downloadingCaptureID == captureID { downloadingCaptureID = nil }
+        }
         do {
             let fileExtension = url.pathExtension.lowercased()
             if ["mov", "mp4", "m4v"].contains(fileExtension) {
@@ -334,6 +385,7 @@ public final class RemoteModel {
             } else {
                 try await mediaStore.savePhoto(data: Data(contentsOf: url), fileExtension: fileExtension)
             }
+            if let captureID { downloadedCaptureIDs.insert(captureID) }
             transfer = TransferStatus(name: name, fraction: 1, phase: .saved)
         } catch {
             transfer = TransferStatus(name: name, fraction: 1, phase: .failed(error.localizedDescription))
