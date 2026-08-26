@@ -347,7 +347,7 @@ private struct CameraSettingsSheet: View {
                 } header: {
                     Text("Experimental")
                 } footer: {
-                    Text("Bluetooth connects the remote and camera with no Wi‑Fi at all — controls work, but photos and videos can't be sent back over it.\(TransportFactory.wifiAwareSupported ? " Wi‑Fi Aware needs both devices on iOS 26, paired in the system prompt." : "") Applies next time you open the camera.")
+                    Text("Bluetooth connects the remote and camera with no Wi‑Fi at all. Controls work everywhere; photos and videos send back fast when both are on the same Wi‑Fi, slowly over Bluetooth otherwise.\(TransportFactory.wifiAwareSupported ? " Wi‑Fi Aware needs both devices on iOS 26, paired in the system prompt." : "") Applies next time you open the camera.")
                 }
                 Section {
                     TextField("Nickname", text: $nickname)

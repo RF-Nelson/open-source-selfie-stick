@@ -33,7 +33,8 @@ enum TransportFactory {
 
     static func make(displayName: String) -> any PeerTransport {
         if bluetoothEnabled {
-            return BluetoothTransport(displayName: displayName)
+            // Bluetooth-primary with an automatic Wi-Fi fast lane for file transfer when reachable.
+            return LayeredTransport(displayName: displayName)
         }
         if #available(iOS 26.0, *), wifiAwareEnabled {
             UserDefaults.standard.set(true, forKey: wifiAwarePendingKey)
