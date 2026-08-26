@@ -1,6 +1,8 @@
 # Pair & Shoot — notes for Claude Code
 
-iOS app (SwiftUI, Swift 6, iOS 18+) that makes one iPhone/iPad a remote control for another's camera over MultipeerConnectivity. Named "Pair & Shoot" (decided 2026-08-23); bundle ID stays `com.richardnelson.opensourceselfiestick` (the 2016 App Store listing).
+iOS app (SwiftUI, Swift 6, iOS 18+) that makes one iPhone/iPad a remote control for another's camera. Named "Pair & Shoot" (decided 2026-08-23); bundle ID stays `com.richardnelson.opensourceselfiestick` (the 2016 App Store listing). Open source under MPL-2.0.
+
+**Status (2026-08-26):** the default **layered transport** (Bluetooth control everywhere + an automatic Wi-Fi fast lane for files) and **smart send-back** (defer over Bluetooth, auto-fast over Wi-Fi, on-demand download with compression + cancel, auto-flush + re-offer on lane changes) are **working and verified on two physical devices (iOS 26)**. Remaining milestones: **Wi-Fi Aware** (iOS 26 opt-in, unfinished), permission onboarding, and the open-source license decision (leaning keep MPL-2.0). Roadmap in `docs/TODO.md`; transport design in `docs/TRANSPORT.md`.
 
 ## Commands
 
@@ -22,6 +24,8 @@ iOS app (SwiftUI, Swift 6, iOS 18+) that makes one iPhone/iPad a remote control 
 
 - Swift 6 language mode, strict concurrency, no default main-actor isolation. Models are `@MainActor @Observable`; the capture service is an `actor`; anything crossing Multipeer/AVFoundation delegate boundaries converts to `Sendable` values at the boundary.
 - New capabilities go through the protocol: add a `RemoteCommand`/`CameraEvent` case, handle it in `CameraHostModel.execute` and `RemoteModel`, add a test. Bump `WireProtocol.version` only for breaking changes.
+- Transport is `PeerTransport` behind `TransportFactory`. The default is `LayeredTransport` (Bluetooth control + auto Wi-Fi fast lane); control/messages ride Bluetooth, files ride Wi-Fi when up. **Delivery is decoupled from intent:** the camera defers full files on Bluetooth (`CaptureResult.fileAvailable`), the remote requests them (`requestFile`/`cancelTransfer`), and they auto-flush when a fast lane appears. See `docs/TRANSPORT.md` before touching transport/send-back.
+- Hardware debugging: the app writes `Documents/transport.log` (`Trace.log`); pull it with `xcrun devicectl device copy from ... --source Documents` (copy the **directory**, not the single file). Both phones can be USB-cabled for reliable install/log-pull; `idevicecrashreport -u <udid> -k <dir>` pulls crash `.ips` files. `idevicesyslog` is unreliable here.
 - Local buttons on the camera screen call `model.perform(_:)` with the same commands a remote would send, so both paths stay identical.
 - Both screens are always dark; the role picker follows the system appearance. Use the components in `Design/Components.swift` before inventing new ones.
 - Don't add third-party dependencies.

@@ -4,28 +4,28 @@
 # Pair &amp; Shoot
 
 **Turn a second iPhone or iPad into a remote control for another one's camera.**<br>
-Photos and video over Wi-Fi — a shared network, or peer-to-peer with no network — with copies sent back to the remote if you want them.
+Controls work anywhere over Bluetooth — no Wi-Fi needed — and photos/video come back fast over Wi-Fi automatically when both devices can reach each other, or slowly over Bluetooth on demand when they can't.
 
 <img src="https://img.shields.io/badge/platform-iOS%2018%2B-lightgrey.svg?style=flat" alt="iOS 18+"> <img src="https://img.shields.io/badge/swift-6-orange.svg?style=flat" alt="Swift 6"> <img src="https://img.shields.io/badge/license-MPL--2.0-lightgrey.svg?style=flat" alt="MPL 2.0">
 </div>
 
-> **Status:** version 2.0 is a from-scratch rebuild of the 2016 app *Open Source Selfie Stick* (kept at tag [`v1.0-legacy`](../../tree/v1.0-legacy)). The logic layer is complete and covered by tests; the app compiles for iOS 18–26 but has **not yet been exercised on two physical devices** — see [Status](#status).
+> **Status:** version 2.0 is a from-scratch rebuild of the 2016 app *Open Source Selfie Stick* (kept at tag [`v1.0-legacy`](../../tree/v1.0-legacy)). The layered Bluetooth + Wi-Fi transport, pairing, capture and smart send-back are **working and verified on two physical devices (iOS 26)**. The remaining milestone is the iOS 26 **Wi-Fi Aware** path — see [Status](#status).
 
 ## What it does
 
 - **Two roles.** Open the app on both devices. One becomes the **camera**, the other the **remote**.
 - **Pairing with a code.** The camera shows a 4-digit code; the remote types it in. No other device nearby can drive your camera, and the link is encrypted.
 - **Photos and video.** The remote switches modes, cycles the flash, flips between front and back cameras, starts a countdown the people in the shot can see on the camera's screen, takes the picture or starts and stops recording.
-- **Copies where you want them.** The camera keeps its own copies (switchable). The remote can ask for photos to be sent back (default on) and videos (default off — they're big). Every capture sends a small preview to the remote either way, so you always see what you just shot.
+- **Copies where you want them, smartly delivered.** The camera keeps its own copies (switchable). The remote can ask for full-resolution photos back (default on) and videos (default off — they're big). Every capture sends a small preview to the remote instantly either way. When a Wi-Fi lane is up, full files arrive in a second or two automatically; when you're on Bluetooth only, they're held and offered as a download (with a size/time warning and Full / Reduced / Small choices), and they flush automatically the moment a Wi-Fi lane appears.
 - **Modern camera.** HEIF photos at full sensor resolution, HEVC video with stabilization, horizon-level rotation handling, tap to focus, pinch to zoom, Camera Control / volume-button shutter on the camera device.
 
 ## How it works
 
 1. Open Pair &amp; Shoot on both devices and choose **Camera** on one, **Remote** on the other.
 2. On the remote, tap the camera in the list and enter the code on its screen.
-3. Shoot. Photos arrive on the remote in a few seconds; videos stay on the camera unless you ask for them.
+3. Shoot. Controls work over Bluetooth with no Wi-Fi at all. Full-resolution photos come back in a second or two when both devices share a Wi-Fi path; otherwise the remote shows a **Download** button (Bluetooth is slower).
 
-**Keep Wi-Fi on for both devices.** The same Wi-Fi network is most reliable; it also works with Wi-Fi on but no network joined (peer-to-peer Wi-Fi), which is less reliable. It does **not** work over Bluetooth alone: modern iOS carries MultipeerConnectivity's data channel over Wi-Fi (infrastructure or peer-to-peer/AWDL) and only ever used Bluetooth to assist discovery, so with Wi-Fi off there is no data path. See [docs/TRANSPORT.md](docs/TRANSPORT.md).
+**The connection is layered and automatic.** Bluetooth is the always-on base — discovery, the 4-digit pairing, and controls work anywhere, even in Airplane Mode. When both devices can reach each other over Wi-Fi/AWDL, the app bootstraps a Wi-Fi "fast lane" over the Bluetooth link and uses it for file transfers; if that isn't available, files fall back to Bluetooth. There's no mode to pick — it detects reachability by trying. (This replaced a Multipeer-only design that couldn't connect off-network.) See [docs/TRANSPORT.md](docs/TRANSPORT.md).
 
 ## Building
 
@@ -60,33 +60,34 @@ PairAndShoot/                 the app (SwiftUI, iOS 18+)
 Packages/PairAndShootCore/    everything that doesn't need a device — with tests
 ├─ Protocol/                  RemoteCommand / CameraEvent (Codable, versioned) and the JSON codec
 ├─ Pairing/                   pairing code, per-session challenge, HMAC proof
-├─ Transport/                 PeerTransport protocol, MultipeerTransport, FakeTransport
+├─ Transport/                 PeerTransport protocol; LayeredTransport (default), BluetoothTransport + L2CAPStreamHandler, MultipeerTransport, WiFiAwareTransport, FakeTransport
 ├─ Camera/                    CameraDevice / MediaStore protocols, CameraHostModel (camera-side logic)
 └─ Remote/                    RemoteModel (remote-side logic)
 Tools/render-icon.swift       draws the app icon (light, dark, tinted)
 ```
 
-- **Transport is a protocol.** `MultipeerTransport` is the only thing that imports MultipeerConnectivity. It turns the framework's delegate callbacks into one `AsyncStream<TransportEvent>`. Swapping in Network.framework or Wi-Fi Aware later touches nothing above it.
+- **Transport is a protocol.** Everything above the transport speaks `PeerTransport` and one `AsyncStream<TransportEvent>`. The default `LayeredTransport` composes a `BluetoothTransport` (Core Bluetooth over an L2CAP channel) with a `MultipeerTransport` "fast lane" it bootstraps over the Bluetooth link; `WiFiAwareTransport` (iOS 26) is an experimental opt-in; `FakeTransport` backs the tests. Only the concrete transports import their frameworks.
 - **The wire protocol is typed.** Remote → camera is `RemoteCommand`; camera → remote is `CameraEvent`. The camera sends a full `CameraState` snapshot whenever anything changes, and the remote renders from it. Every message carries a protocol version; mismatched versions refuse to talk with a clear message on both screens.
 - **Both role models are pure logic.** `CameraHostModel` and `RemoteModel` talk to a `PeerTransport`, a `CameraDevice` and a `MediaStore`; the app supplies AVFoundation, PhotoKit and Multipeer, the tests supply fakes. `EndToEndTests` drives a remote model against a camera model over two linked fake transports.
 - **Pairing.** The camera advertises a random per-session challenge. The remote's invitation carries `HMAC-SHA256(key: SHA256(code), challenge + remoteName)`. The camera verifies before accepting, allows one remote at a time, and issues a new code after three wrong guesses. The Multipeer session itself is encrypted. This keeps strangers with the app out; it is not designed to resist someone sniffing the local network with custom tooling.
-- **Files.** Photos are sent as the original HEIF/JPEG file (metadata intact). Videos are HEVC `.mov`. Transfers use Multipeer's resource API with progress on both ends; the receiver saves to Photos with add-only permission.
+- **Files, delivered by channel.** Full-resolution photos are the original HEIF/JPEG (metadata intact); videos are HEVC `.mov`. Delivery is decoupled from intent: over Wi-Fi they send automatically; over Bluetooth they're held and sent on request (photos can be re-encoded smaller — Full / Reduced / Small — for a quicker Bluetooth transfer), with live progress and cancel on both ends, and they flush automatically when a Wi-Fi lane appears. The receiver saves to Photos with add-only permission. Measured throughput: ~1.5 MB/s over the Wi-Fi lane vs ~28 KB/s over Bluetooth L2CAP.
 
 ## Status
 
-Done and verified on this machine:
+Done and **verified on two physical devices (iPhone 17 Pro Max + iPad, iOS 26)**:
 
-- Core package: 35 tests covering the codec, pairing, both models and the end-to-end flow.
-- App: builds for iOS device and Simulator SDKs under Swift 6 strict concurrency with no warnings.
+- **Layered transport** — Bluetooth control anywhere (works in Airplane Mode), with an automatic Wi-Fi fast lane for file transfer that self-heals after AWDL drops.
+- **Smart send-back** — instant thumbnails; auto-fast over Wi-Fi; defer + on-demand download (with size/time warning, Full/Reduced/Small compression, live progress, cancel) over Bluetooth; auto-flush when a Wi-Fi lane returns; a capture is never stranded if the lane drops mid-send.
+- Pairing, capture, photo/video, countdown, flash, front/back — all working on hardware.
+- Core package: **53 tests** (codec, pairing, both models, deferral/download flows, end-to-end). App builds for iOS device + Simulator SDKs under Swift 6 strict concurrency.
 
-Not yet done — needs two physical devices:
+Remaining milestones:
 
-- Run the pairing flow, capture, video and transfers on real hardware (AVFoundation and Multipeer behaviour can't be tested without them).
-- iPad layout pass, localisation, manual exposure controls, a session gallery, live preview on the remote.
-- A Bluetooth-only transport (Core Bluetooth) for shutter control with Wi-Fi off — see [docs/TRANSPORT.md](docs/TRANSPORT.md).
+- **Wi-Fi Aware (iOS 26)** — the experimental opt-in transport isn't finished; getting it working is the next major piece. See [docs/TRANSPORT.md](docs/TRANSPORT.md).
+- First-run **permission onboarding** so the system prompts aren't a surprise (see [docs/TODO.md](docs/TODO.md)).
+- iPad layout pass, localisation, manual exposure, a session gallery.
 
-### TODO
-- [ ] Test a Bluetooth-only remote-control mode: shutter/controls over Bluetooth with Wi-Fi off (Core Bluetooth transport; media stays on the camera since BLE is too slow to transfer photos/video). See [docs/TRANSPORT.md](docs/TRANSPORT.md).
+See [docs/TODO.md](docs/TODO.md) for the pre-review checklist and open decisions (including licensing).
 
 ## History
 

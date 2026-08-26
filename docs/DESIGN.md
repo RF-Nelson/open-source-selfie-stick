@@ -61,7 +61,9 @@ The brand blue carries over from the 2016 wordmark (a royal blue) so the App Sto
 
 **Remote — discovery.** A spinner and the instruction while nothing is found; then a list of cameras by name. Tapping one opens the code sheet: four boxes, number pad up immediately, auto-submits on the fourth digit.
 
-**Remote — control deck.** From the top: camera name pill and settings; a stage that shows the countdown, the recording clock, or the last capture (200 pt) with a session count; the transfer banner when a file is moving; flash · timer · flip; the mode switch; the 124 pt shutter; one line of plain text saying where the next capture will end up ("Photos come back to this device", "Videos stay on the camera").
+**Remote — control deck.** From the top: camera name pill, a **channel pill** ("Bluetooth" or "Wi-Fi") showing how files travel, and settings; a stage that shows the countdown, the recording clock, or the last capture (300 pt) with a session count; the transfer banner (live progress) when a file is moving; flash · timer · flip; the mode switch; the 124 pt shutter (dimmed and paused while a download runs). When a capture is held on the camera (Bluetooth only), a green **Download full photo/video** button appears under the thumbnail; tapping it warns with the size and estimated seconds over Bluetooth and offers Full / Reduced / Small, then shows progress with a red **Cancel**. Over Wi-Fi the full file just arrives, no button.
+
+**Deferred delivery.** Delivery is decoupled from intent (see `docs/TRANSPORT.md`): the thumbnail is instant, full files come fast over Wi-Fi automatically, and over Bluetooth they're offered as a download and flush automatically when Wi-Fi returns — the UI adapts rather than making the user pick a mode.
 
 **Settings sheets.** Camera: keep copies in Photos, issue a new code, nickname. Remote: send photos / send videos (with the honest note about Bluetooth), countdown length, nickname. Medium detents — they're quick toggles, not destinations.
 

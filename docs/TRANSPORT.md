@@ -57,6 +57,43 @@ All of `LayeredTransport`'s event handling is marshaled to the main actor (`Main
 task races the outgoing buffer — a real crash we hit and fixed (concurrent `Data` mutation →
 `EXC_BREAKPOINT`, camera-only).
 
+### Self-healing
+The fast lane also **re-establishes after a drop** (AWDL is flaky): on a Wi-Fi-leg disconnect the
+camera re-advertises and the remote re-browses with the same token (3s debounce), so it recovers on
+its own and deferred files flush when it returns.
+
+## Smart send-back (deferred delivery)
+
+Delivery of full-resolution captures is decoupled from the user's intent ("I want copies"), because
+the channel is dynamic — a static "send back" setting would strand the user on whichever channel they
+happened to be on. The thumbnail (in `CaptureResult.thumbnailJPEG`) always lands instantly on both
+channels; the full file is delivered like this:
+
+- **Fast lane up:** the camera sends the original automatically — photo on both phones in ~1–2 s.
+- **Bluetooth only:** the camera *holds* the file (doesn't slow-push it). The capture arrives with
+  `CaptureResult.fileAvailable == true`, and the remote shows a **Download** button. Tapping it warns
+  with the size and estimated seconds over Bluetooth and offers **Full / Reduced / Small** (the camera
+  re-encodes photos smaller via ImageIO for the compressed choices). Live progress on both ends; either
+  side can cancel (Multipeer `Progress.cancel`; a Bluetooth `fileCancel` frame that stops the paced
+  producer on a frame boundary). One download at a time; the shutter is paused during a download.
+- **Auto-flush:** when a fast lane appears, everything still pending flushes at full quality —
+  "leave on Bluetooth, come back on Wi-Fi, the photos land."
+- **Never stranded:** if an automatic Wi-Fi send fails (lane drops mid-transfer), the camera re-offers
+  the capture as a Bluetooth download (re-sends the `CaptureResult` with `fileAvailable = true`; the
+  remote upserts captures by id).
+
+**Correlation.** Every capture's file transfer is named `<captureID>.<ext>` (`TransferName`), so the
+receiver ties an arriving file to its capture regardless of quality; the compressed copy is a separate
+temp file so it never clobbers the held original (which is kept for repeat/full downloads and wiped on
+disconnect). BLE file send is **paced** — the `L2CAPStreamHandler` pulls one ~16 KB chunk at a time via
+`nextChunk`, so memory is bounded and a cancel is clean; completion fires only when the buffer is empty
+*and* there's space *and* the producer is exhausted (an empty buffer with a full kernel just waits).
+
+**Protocol (version 3).** `CaptureResult.fileAvailable`; `RemoteCommand.requestFile(id, quality)` and
+`.cancelTransfer(id)`; `TransferQuality` (full/high/medium); a `fileChannelFast(Bool)` transport event
+(drives the `ChannelPill` and the defer/auto decision); and `PeerTransport.supportsFileTransfer` /
+`cancelFileSend()`.
+
 ## Historical: why the original Multipeer-only design was abandoned
 
 MultipeerConnectivity builds its encrypted data channel with ICE + DTLS over a **Wi-Fi** path —
