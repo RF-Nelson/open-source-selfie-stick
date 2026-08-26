@@ -85,7 +85,10 @@ struct RemoteScreen: View {
             Spacer()
             switch model.connection {
             case .connected(let peer):
-                StatusPill(text: model.camera?.displayName ?? peer.displayName, systemImage: "camera.fill", tint: Theme.success)
+                HStack(spacing: 8) {
+                    StatusPill(text: model.camera?.displayName ?? peer.displayName, systemImage: "camera.fill", tint: Theme.success)
+                    ChannelPill(fast: model.fileChannelFast)
+                }
                 Spacer()
                 ControlButton(systemImage: "gearshape.fill", label: "Settings") { showSettings = true }
             default:

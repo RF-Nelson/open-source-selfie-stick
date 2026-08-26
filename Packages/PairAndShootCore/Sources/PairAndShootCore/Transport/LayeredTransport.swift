@@ -105,6 +105,7 @@ public final class LayeredTransport: PeerTransport, @unchecked Sendable {
         case .connected(let peer):
             lock.withLock { primaryPeer = peer }
             continuation.yield(.connected(peer))
+            continuation.yield(.fileChannelFast(false))   // starts on Bluetooth; the Wi-Fi leg may upgrade it
             startWiFiLeg()
         case .disconnected(let peer):
             teardownWiFi()
@@ -184,6 +185,7 @@ public final class LayeredTransport: PeerTransport, @unchecked Sendable {
             wifi.stopAdvertising()
             wifi.stopBrowsing()
             Trace.log("layered: Wi-Fi fast lane UP — files will use Wi-Fi")
+            continuation.yield(.fileChannelFast(true))
         case .disconnected(let peer):
             let dropped = lock.withLock { () -> Bool in
                 guard wifiPeer?.id == peer.id else { return false }
@@ -191,13 +193,16 @@ public final class LayeredTransport: PeerTransport, @unchecked Sendable {
                 wifiUp = false
                 return true
             }
-            if dropped { Trace.log("layered: Wi-Fi fast lane down — files fall back to Bluetooth") }
+            if dropped {
+                Trace.log("layered: Wi-Fi fast lane down — files fall back to Bluetooth")
+                continuation.yield(.fileChannelFast(false))
+            }
         case .fileReceiveStarted, .fileReceiveProgress, .fileReceived, .fileReceiveFailed,
              .fileSendProgress, .fileSendFinished:
             continuation.yield(event)   // a file arrived/left over the fast lane
         case .failure(let message):
             Trace.log("layered: Wi-Fi leg reported \(message)")   // optional leg; never surface
-        case .connecting, .message, .peerLost:
+        case .connecting, .message, .peerLost, .fileChannelFast:
             break
         }
     }

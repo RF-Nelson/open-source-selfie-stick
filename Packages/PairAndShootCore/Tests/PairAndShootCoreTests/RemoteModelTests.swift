@@ -160,15 +160,15 @@ import Testing
         #expect(model.notice?.contains("didn't accept the code") == true)
     }
 
-    @Test func connectionThatNeverEstablishesSuggestsWifi() async {
+    @Test func connectionThatNeverEstablishesSuggestsBluetooth() async {
         let model = makeModel()
         transport.emit(.peerFound(camera))
         _ = await waitUntil { model.cameras.count == 1 }
         model.connect(to: camera, code: PairingCode("0000")!)
-        // The session never connects and no challenge ever arrives (Bluetooth-only, Wi-Fi off).
+        // The session never connects and no challenge ever arrives — the Bluetooth link couldn't form.
         transport.emit(.disconnected(camera))
         #expect(await waitUntil { model.connection == .browsing })
-        #expect(model.notice?.lowercased().contains("wi-fi") == true)
+        #expect(model.notice?.lowercased().contains("bluetooth") == true)
     }
 
     @Test func pairedDropAutoReconnects() async {

@@ -40,6 +40,9 @@ public final class CameraHostModel {
     public private(set) var captures: [CaptureResult] = []
     public private(set) var outgoingTransfer: TransferStatus?
     public private(set) var notice: String?
+    /// The current file-transfer channel while connected: false = Bluetooth only, true = Bluetooth + a
+    /// fast Wi-Fi lane. nil when the transport is single-channel (Wi-Fi Aware) or not connected.
+    public private(set) var fileChannelFast: Bool?
 
     public var lastCapture: CaptureResult? { captures.last }
     public var localName: String { transport.localPeer.displayName }
@@ -417,6 +420,7 @@ public final class CameraHostModel {
             pairingTimeoutTask?.cancel()
             pairingTimeoutTask = nil
             link = .none
+            fileChannelFast = nil
             if state.countdown != nil { captureTask?.cancel() }
             if availability == .ready { advertise() }
             if expectsDisconnect {
@@ -434,6 +438,8 @@ public final class CameraHostModel {
                 try? FileManager.default.removeItem(at: url)
             }
             outgoingTransfer = TransferStatus(name: name, fraction: 1, phase: error.map { .failed($0) } ?? .sent)
+        case .fileChannelFast(let fast):
+            fileChannelFast = fast
         case .failure(let message):
             show(message)
         case .peerFound, .peerLost, .fileReceiveStarted, .fileReceiveProgress, .fileReceived, .fileReceiveFailed:

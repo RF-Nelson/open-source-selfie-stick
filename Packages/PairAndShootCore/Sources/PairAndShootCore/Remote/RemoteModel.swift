@@ -34,6 +34,9 @@ public final class RemoteModel {
     public private(set) var transfer: TransferStatus?
     /// A short, transient message for the person holding the remote.
     public private(set) var notice: String?
+    /// The current file-transfer channel while connected: false = Bluetooth only, true = Bluetooth + a
+    /// fast Wi-Fi lane. nil when the transport is single-channel (Wi-Fi Aware) or not connected.
+    public private(set) var fileChannelFast: Bool?
 
     public var timerSeconds = 0
     public var sendBackPhotos = true
@@ -223,6 +226,7 @@ public final class RemoteModel {
             camera = nil
             cameraState = nil
             didReceiveChallenge = false
+            fileChannelFast = nil
             if expectsDisconnect {
                 expectsDisconnect = false
                 isReconnecting = false
@@ -241,8 +245,8 @@ public final class RemoteModel {
                 // We connected and were challenged, but pairing didn't complete — most likely the code.
                 show("The camera didn't accept the code. Check it and try again.")
             } else {
-                // The session never established — typically Bluetooth-only with Wi-Fi off.
-                show("Couldn't connect to the camera. Turn Wi-Fi on for a reliable link — you don't have to join a network.")
+                // The session never established — the Bluetooth link couldn't form.
+                show("Couldn't connect to the camera. Make sure Bluetooth is on and the devices are close.")
             }
         case .message(let data, let peer):
             guard connection.peer?.id == peer.id else { return }
@@ -257,6 +261,8 @@ public final class RemoteModel {
             transfer = TransferStatus(name: name, fraction: 0, phase: .failed(error))
         case .fileSendProgress, .fileSendFinished:
             break
+        case .fileChannelFast(let fast):
+            fileChannelFast = fast
         case .failure(let message):
             show(message)
         }

@@ -29,6 +29,10 @@ public enum TransportEvent: Sendable {
     case fileReceiveFailed(name: String, error: String)
     case fileSendProgress(name: String, fraction: Double)
     case fileSendFinished(name: String, error: String?)
+    /// The file-transfer channel's speed changed: true once a fast (Wi-Fi) link is available, false
+    /// when only the slow (Bluetooth) link is up. The layered transport emits this as its Wi-Fi fast
+    /// lane comes and goes; single-channel transports never do, so the link speed stays unknown (nil).
+    case fileChannelFast(Bool)
     case failure(String)
 }
 

@@ -185,10 +185,13 @@ struct CameraScreen: View {
         case .connecting:
             StatusPill(text: "Connecting…", systemImage: "dot.radiowaves.left.and.right")
         case .connected(let peer, let info):
-            Button { confirmDisconnect = true } label: {
-                StatusPill(text: info?.displayName ?? peer.displayName, systemImage: "dot.radiowaves.left.and.right", tint: Theme.success)
+            HStack(spacing: 8) {
+                Button { confirmDisconnect = true } label: {
+                    StatusPill(text: info?.displayName ?? peer.displayName, systemImage: "dot.radiowaves.left.and.right", tint: Theme.success)
+                }
+                .buttonStyle(.plain)
+                ChannelPill(fast: model.fileChannelFast)
             }
-            .buttonStyle(.plain)
         }
     }
 

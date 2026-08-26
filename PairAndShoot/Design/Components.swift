@@ -173,6 +173,21 @@ struct StatusPill: View {
     }
 }
 
+/// How captures travel on the current link: a fast Wi-Fi lane, or Bluetooth alone (control always
+/// rides Bluetooth; the Wi-Fi lane is the bonus that makes photos/videos fast). Renders nothing when
+/// the transport is single-channel and the speed is unknown (`fast == nil`).
+struct ChannelPill: View {
+    let fast: Bool?
+
+    var body: some View {
+        if let fast {
+            StatusPill(text: fast ? "Wi-Fi" : "Bluetooth",
+                       systemImage: fast ? "wifi" : "antenna.radiowaves.left.and.right",
+                       tint: fast ? Theme.success : Theme.inkMuted)
+        }
+    }
+}
+
 struct CountdownOverlay: View {
     let seconds: Int
 
