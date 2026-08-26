@@ -289,7 +289,7 @@ private struct ControlDeck: View {
             }
             .frame(height: 220)
         } else {
-            VStack(spacing: 12) {
+            VStack(spacing: 22) {
                 Button {
                     ExternalApp.openPhotos()
                 } label: {
@@ -304,6 +304,7 @@ private struct ControlDeck: View {
                             .font(.subheadline.weight(.semibold))
                     }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
                     .tint(Theme.success)
                 } else if let capture = model.lastCapture, model.isDownloading(capture) {
                     Button(role: .destructive) {
@@ -313,6 +314,7 @@ private struct ControlDeck: View {
                             .font(.subheadline.weight(.semibold))
                     }
                     .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
                     .tint(.red)
                 }
                 Button {
