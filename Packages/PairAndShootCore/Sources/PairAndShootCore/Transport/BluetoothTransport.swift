@@ -24,7 +24,27 @@ enum BLEIdentifiers {
 public final class BluetoothTransport: NSObject, PeerTransport, @unchecked Sendable {
     public let localPeer: Peer
     public let events: AsyncStream<TransportEvent>
-    public var supportsFileTransfer: Bool { false }
+    // BLE can carry files — just slowly, chunked over the L2CAP stream. The layered transport prefers
+    // Wi-Fi for these when it's up; on a Bluetooth-only link they still arrive.
+    public var supportsFileTransfer: Bool { true }
+
+    /// One incoming file being reassembled from chunks.
+    private struct IncomingFile {
+        let handle: FileHandle
+        let url: URL
+        let name: String
+        let size: Int
+        var received: Int
+        let startedAt: Date
+    }
+
+    /// First byte of every L2CAP frame's payload: separates control messages from file transfer, which
+    /// share the one stream.
+    private enum FrameTag: UInt8 { case message = 0, fileBegin = 1, fileChunk = 2, fileEnd = 3 }
+
+    private struct FileHeader: Codable { let name: String; let size: Int }
+
+    private static let fileChunkBytes = 16 * 1024
 
     private let continuation: AsyncStream<TransportEvent>.Continuation
     private let lock = NSLock()
@@ -46,11 +66,15 @@ public final class BluetoothTransport: NSObject, PeerTransport, @unchecked Senda
     // Shared open connection.
     private var streamHandler: L2CAPStreamHandler?
     private var connectedPeer: Peer?
+    private let inboxDirectory: URL
+    private var incomingFile: IncomingFile?
 
     public init(displayName: String) {
         self.displayName = BluetoothTransport.trimmedName(displayName)
         localPeer = Peer(id: "local", displayName: self.displayName)
         (events, continuation) = AsyncStream.makeStream(of: TransportEvent.self, bufferingPolicy: .unbounded)
+        inboxDirectory = FileManager.default.temporaryDirectory.appendingPathComponent("PairAndShootBLEInbox", isDirectory: true)
+        try? FileManager.default.createDirectory(at: inboxDirectory, withIntermediateDirectories: true)
         super.init()
     }
 
@@ -120,13 +144,45 @@ public final class BluetoothTransport: NSObject, PeerTransport, @unchecked Senda
     public func send(_ data: Data, to peers: [Peer]) throws {
         let handler = lock.withLock { streamHandler }
         guard let handler else { throw TransportError.notConnected }
-        handler.send(data)
+        handler.send(tagged(.message, data))
     }
 
     public func sendFile(at url: URL, named name: String, to peer: Peer) {
-        // BLE can't carry full-resolution media in a reasonable time; the layered transport handles this
-        // over Wi-Fi. On a Bluetooth-only link, report it cleanly instead of hanging.
-        continuation.yield(.fileSendFinished(name: name, error: "Photos and videos can only be sent over Wi‑Fi."))
+        let handler = lock.withLock { streamHandler }
+        guard let handler else {
+            continuation.yield(.fileSendFinished(name: name, error: "Not connected."))
+            return
+        }
+        guard let data = try? Data(contentsOf: url),
+              let header = try? JSONEncoder().encode(FileHeader(name: name, size: data.count)) else {
+            continuation.yield(.fileSendFinished(name: name, error: "Couldn't read the file to send."))
+            return
+        }
+        let startedAt = Date()
+        Trace.log("ble: sending file \(name) — \(data.count) bytes")
+        handler.send(tagged(.fileBegin, header))
+        var offset = 0
+        while offset < data.count {
+            let end = min(offset + Self.fileChunkBytes, data.count)
+            handler.send(tagged(.fileChunk, data.subdata(in: offset..<end)))
+            offset = end
+        }
+        handler.send(tagged(.fileEnd, Data()))
+        // Report finished only once our buffer has fully flushed to the Bluetooth stack.
+        handler.onDrained = { [weak self] in
+            let seconds = Date().timeIntervalSince(startedAt)
+            let kbps = seconds > 0 ? Double(data.count) / 1024.0 / seconds : 0
+            Trace.log("ble: file \(name) flushed \(data.count) bytes in \(Int(seconds * 1000)) ms (\(Int(kbps)) KB/s local)")
+            self?.continuation.yield(.fileSendProgress(name: name, fraction: 1))
+            self?.continuation.yield(.fileSendFinished(name: name, error: nil))
+        }
+        continuation.yield(.fileSendProgress(name: name, fraction: 0))
+    }
+
+    private func tagged(_ tag: FrameTag, _ body: Data) -> Data {
+        var payload = Data([tag.rawValue])
+        payload.append(body)
+        return payload
     }
 
     public func disconnect() {
@@ -157,7 +213,7 @@ public final class BluetoothTransport: NSObject, PeerTransport, @unchecked Senda
         }
         let handler = L2CAPStreamHandler(
             channel: channel,
-            onMessage: { [weak self] payload in self?.continuation.yield(.message(payload, from: peer)) },
+            onMessage: { [weak self] payload in self?.handleIncoming(payload, from: peer) },
             onClose: { [weak self] error in self?.handleClose(error) }
         )
         lock.withLock {
@@ -173,7 +229,49 @@ public final class BluetoothTransport: NSObject, PeerTransport, @unchecked Senda
         tearDownConnection(notify: true)
     }
 
+    /// Route one deframed L2CAP payload by its leading tag byte. Runs on the main run loop (where the
+    /// streams are scheduled), so `incomingFile` is single-threaded and needs no lock.
+    private func handleIncoming(_ payload: Data, from peer: Peer) {
+        guard let first = payload.first, let tag = FrameTag(rawValue: first) else { return }
+        let body = Data(payload.dropFirst())
+        switch tag {
+        case .message:
+            continuation.yield(.message(body, from: peer))
+        case .fileBegin:
+            guard let header = try? JSONDecoder().decode(FileHeader.self, from: body) else { return }
+            let safeName = header.name.replacingOccurrences(of: "/", with: "_")
+            let url = inboxDirectory.appendingPathComponent(UUID().uuidString + "-" + safeName)
+            FileManager.default.createFile(atPath: url.path, contents: nil)
+            guard let handle = try? FileHandle(forWritingTo: url) else {
+                continuation.yield(.fileReceiveFailed(name: header.name, error: "Couldn't open a file to receive."))
+                return
+            }
+            incomingFile = IncomingFile(handle: handle, url: url, name: header.name, size: header.size, received: 0, startedAt: Date())
+            Trace.log("ble: receiving file \(header.name) — \(header.size) bytes")
+            continuation.yield(.fileReceiveStarted(name: header.name, from: peer))
+        case .fileChunk:
+            guard var file = incomingFile else { return }
+            try? file.handle.write(contentsOf: body)
+            file.received += body.count
+            incomingFile = file
+            let fraction = file.size > 0 ? Double(file.received) / Double(file.size) : 0
+            continuation.yield(.fileReceiveProgress(name: file.name, fraction: fraction))
+        case .fileEnd:
+            guard let file = incomingFile else { return }
+            try? file.handle.close()
+            incomingFile = nil
+            let seconds = Date().timeIntervalSince(file.startedAt)
+            let kbps = seconds > 0 ? Double(file.received) / 1024.0 / seconds : 0
+            Trace.log("ble: file \(file.name) received \(file.received) bytes in \(Int(seconds * 1000)) ms (\(Int(kbps)) KB/s)")
+            continuation.yield(.fileReceived(name: file.name, url: file.url, from: peer))
+        }
+    }
+
     private func tearDownConnection(notify: Bool) {
+        if let file = incomingFile {
+            try? file.handle.close()
+            incomingFile = nil
+        }
         let peer = lock.withLock { () -> Peer? in
             streamHandler?.close()
             streamHandler = nil

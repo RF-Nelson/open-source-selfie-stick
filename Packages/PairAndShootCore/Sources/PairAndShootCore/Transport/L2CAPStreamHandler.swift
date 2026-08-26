@@ -22,6 +22,9 @@ final class L2CAPStreamHandler: NSObject, StreamDelegate {
 
     private let onMessage: (Data) -> Void
     private let onClose: (Error?) -> Void
+    /// One-shot, fired the next time the outgoing buffer fully drains. Used to time a file send and
+    /// report it finished only once every byte has left our buffer.
+    var onDrained: (() -> Void)?
 
     init(channel: CBL2CAPChannel, onMessage: @escaping (Data) -> Void, onClose: @escaping (Error?) -> Void) {
         self.channel = channel
@@ -73,6 +76,7 @@ final class L2CAPStreamHandler: NSObject, StreamDelegate {
 
     private func flush() {
         guard !closed else { return }
+        let hadData = !outbox.isEmpty
         while !outbox.isEmpty, output.hasSpaceAvailable {
             let written = outbox.withUnsafeBytes { raw -> Int in
                 guard let base = raw.bindMemory(to: UInt8.self).baseAddress else { return 0 }
@@ -83,6 +87,10 @@ final class L2CAPStreamHandler: NSObject, StreamDelegate {
             } else {
                 break
             }
+        }
+        if hadData, outbox.isEmpty, let drained = onDrained {
+            onDrained = nil
+            drained()
         }
     }
 
