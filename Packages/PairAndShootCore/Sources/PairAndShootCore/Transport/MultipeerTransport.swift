@@ -22,6 +22,7 @@ public final class MultipeerTransport: NSObject, PeerTransport, @unchecked Senda
     private var peerIDsByID: [String: MCPeerID] = [:]
     private var discoveryInfoByID: [String: [String: String]] = [:]
     private var progressObservations: [String: NSKeyValueObservation] = [:]
+    private var fileStartTimes: [String: Date] = [:]
     private let inboxDirectory: URL
     private let log = Logger(subsystem: "com.richardnelson.opensourceselfiestick", category: "mc")
 
@@ -137,8 +138,18 @@ public final class MultipeerTransport: NSObject, PeerTransport, @unchecked Senda
         }
         let continuation = self.continuation
         let key = "send:" + name
+        let startedAt = Date()
+        let byteCount = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int ?? 0
+        Trace.log("mc: sending file \(name) — \(byteCount) bytes")
         let progress = session.sendResource(at: url, withName: name, toPeer: peerID) { [weak self] error in
             self?.endObservation(key: key)
+            if let error {
+                Trace.log("mc: file \(name) send failed: \(error.localizedDescription)")
+            } else {
+                let seconds = Date().timeIntervalSince(startedAt)
+                let kbps = seconds > 0 ? Double(byteCount) / 1024.0 / seconds : 0
+                Trace.log("mc: file \(name) sent \(byteCount) bytes in \(Int(seconds * 1000)) ms (\(Int(kbps)) KB/s)")
+            }
             continuation.yield(.fileSendFinished(name: name, error: error?.localizedDescription))
         }
         observe(progress, key: key) { fraction in
@@ -269,6 +280,8 @@ extension MultipeerTransport: MCSessionDelegate {
     }
 
     public func session(_ session: MCSession, didStartReceivingResourceWithName resourceName: String, fromPeer peerID: MCPeerID, with progress: Progress) {
+        lock.withLock { fileStartTimes[resourceName] = Date() }
+        Trace.log("mc: receiving file \(resourceName)")
         continuation.yield(.fileReceiveStarted(name: resourceName, from: peer(for: peerID)))
         let continuation = self.continuation
         observe(progress, key: "recv:" + resourceName) { fraction in
@@ -279,7 +292,9 @@ extension MultipeerTransport: MCSessionDelegate {
     public func session(_ session: MCSession, didFinishReceivingResourceWithName resourceName: String, fromPeer peerID: MCPeerID,
                         at localURL: URL?, withError error: (any Error)?) {
         endObservation(key: "recv:" + resourceName)
+        let startedAt = lock.withLock { fileStartTimes.removeValue(forKey: resourceName) }
         if let error {
+            Trace.log("mc: file \(resourceName) receive failed: \(error.localizedDescription)")
             continuation.yield(.fileReceiveFailed(name: resourceName, error: error.localizedDescription))
             return
         }
@@ -292,6 +307,12 @@ extension MultipeerTransport: MCSessionDelegate {
         let destination = inboxDirectory.appendingPathComponent(UUID().uuidString + "-" + safeName)
         do {
             try FileManager.default.moveItem(at: localURL, to: destination)
+            let byteCount = (try? FileManager.default.attributesOfItem(atPath: destination.path))?[.size] as? Int ?? 0
+            if let startedAt {
+                let seconds = Date().timeIntervalSince(startedAt)
+                let kbps = seconds > 0 ? Double(byteCount) / 1024.0 / seconds : 0
+                Trace.log("mc: file \(resourceName) received \(byteCount) bytes in \(Int(seconds * 1000)) ms (\(Int(kbps)) KB/s)")
+            }
             continuation.yield(.fileReceived(name: resourceName, url: destination, from: peer(for: peerID)))
         } catch {
             continuation.yield(.fileReceiveFailed(name: resourceName, error: error.localizedDescription))
