@@ -14,7 +14,7 @@ iOS app (SwiftUI, Swift 6, iOS 18+) that makes one iPhone/iPad a remote control 
 
 ## Layout
 
-- `Packages/PairAndShootCore` — all logic, no UI, no AVFoundation. Protocol (`Messages.swift`), pairing, `PeerTransport` + `MultipeerTransport` + `FakeTransport`, `CameraHostModel`, `RemoteModel`. Tests here.
+- `Packages/PairAndShootCore` — all logic, no UI, no AVFoundation. Protocol (`Messages.swift`), pairing, `PeerTransport` and its implementations (`LayeredTransport` — the default: Bluetooth control + auto Wi-Fi fast lane; `BluetoothTransport` + `L2CAPStreamHandler`; `MultipeerTransport`; `WiFiAwareTransport`; `FakeTransport`), `CameraHostModel`, `RemoteModel`. Transport architecture in `docs/TRANSPORT.md`. Tests here.
 - `PairAndShoot/` — the app. `Camera/CaptureService.swift` is the AVFoundation actor; `Camera/CameraScreen.swift` and `Remote/RemoteScreen.swift` are the two operating screens; `Design/` holds the theme and shared controls.
 - `docs/DESIGN.md` — product, naming, visual system, screen behaviour.
 

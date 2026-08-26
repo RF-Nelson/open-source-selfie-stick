@@ -48,6 +48,7 @@ The brand blue carries over from the 2016 wordmark (a royal blue) so the App Sto
 - `ControlButton` — 48 pt circular glass buttons (Liquid Glass on iOS 26, material below), with an optional yellow badge (timer seconds).
 - `ModeSwitch` — PHOTO / VIDEO capsule, locked while recording.
 - `StatusPill` — connection state; green when linked.
+- `ChannelPill` — sits next to the link pill when connected: "Bluetooth" (control-only, slow file transfer) or "Wi-Fi" (the fast lane is up), reflecting how photos/videos travel on the current link.
 - `CountdownOverlay` — 180 pt rounded numerals with a numeric content transition; shown on **both** devices, because the people in the shot are looking at the camera.
 - `TransferBanner` — one component for both directions (sending / receiving / saving / saved / failed) so progress looks the same everywhere.
 - `CaptureThumbnail` — the "you just shot this" acknowledgement; video gets a play badge and duration.

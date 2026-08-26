@@ -1,43 +1,69 @@
 # Networking & transport
 
-Pair & Shoot talks between the two devices through **MultipeerConnectivity**, behind the
-`PeerTransport` protocol in `PairAndShootCore` (only `MultipeerTransport` imports the framework).
+Pair & Shoot connects the two devices with a **layered transport** (`LayeredTransport` in
+`PairAndShootCore`), behind the `PeerTransport` protocol. **Bluetooth (Core Bluetooth) is the
+always-on primary** — discovery, the 4-digit pairing, control, and a slow file fallback — and once
+it connects, the two devices bootstrap a **Multipeer (Wi-Fi/AWDL) "fast lane"** over the Bluetooth
+link and route full-resolution file transfers across it whenever they're reachable (same network).
+Wi-Fi Aware (iOS 26) stays as an experimental opt-in.
 
-## What works, and what doesn't
+This replaced the original Multipeer-only design after on-device testing (below) proved peer-to-peer
+Wi-Fi can't connect off-network. The transport files:
 
-Confirmed on hardware (iPhone 17 Pro Max + a second iPhone, iOS 26), 23 Aug 2026:
+- `LayeredTransport` — composes the two legs, presents them as one peer, routes control over
+  Bluetooth and files over Wi-Fi when up. The default via `TransportFactory`.
+- `BluetoothTransport` + `L2CAPStreamHandler` — Core Bluetooth; the camera advertises, the remote
+  connects, and they meet on an L2CAP channel framed with `MessageFraming`.
+- `MultipeerTransport` — the Wi-Fi fast lane (and the standalone transport the layered one wraps).
+- `WiFiAwareTransport` — the iOS 26 opt-in.
+- `FakeTransport` — tests/previews.
 
-| Both devices' network | Pairing & control | Notes |
+## What works, confirmed on hardware
+
+| Both devices' network | Result | Notes |
 |---|---|---|
-| Same Wi-Fi network | **Reliable** | The intended setup. Photos/video, flash, timer, send-back all work. |
-| Personal Hotspot (one phone hosts, the other joins) | **Expected reliable — untested** | Puts both on a real shared subnet with no router; MultipeerConnectivity should behave like same-network. Worth confirming. |
-| Wi-Fi **on**, no network joined (peer-to-peer / AWDL) | **Does not work in practice** | Reached "connected" once, briefly, then dropped; not one photo could be taken. AWDL alone is not usable here. |
-| Wi-Fi **off**, Bluetooth on | **Does not connect** | Discovery happens, but the session never forms. |
+| Same Wi-Fi network | **Full speed** | Control over Bluetooth; files over the Wi-Fi fast lane. |
+| Different / no network, Bluetooth on | **Works** | Control + slow file transfer over Bluetooth L2CAP — no Wi-Fi at all (verified with the remote in Airplane Mode). |
+| Off-network Multipeer alone (no Bluetooth) | **Does not connect** | Discovers the peer but the data channel never forms (`connecting -> notConnected`), even with both Wi-Fi radios free. This is why Bluetooth is the primary. |
 
-## Why Bluetooth-only fails
+## Measured file throughput (≈900 KB HEIC)
+
+| Channel | Time | Throughput |
+|---|---|---|
+| Bluetooth L2CAP | ~29 s | ~28 KB/s |
+| Wi-Fi fast lane (Multipeer) | ~0.6 s | ~1,511 KB/s |
+
+Wi-Fi is ~54× faster, so files use it whenever the fast lane is up and fall back to Bluetooth
+otherwise. There is no live video preview in the app, so Bluetooth alone carries the whole experience
+(commands, camera state, the pairing handshake, and the small post-shot thumbnail all travel as
+messages) — only full-resolution send-back benefits from the Wi-Fi lane.
+
+## How the Wi-Fi fast lane is bootstrapped
+
+1. Bluetooth connects (L2CAP). The model sees one peer, one transport; the 4-digit code is verified
+   over the Bluetooth channel.
+2. The camera mints a random rendezvous token and sends it to the remote over a **tagged control
+   lane** on the Bluetooth message channel (a leading lane byte: 0 = app, 1 = layered control).
+3. Both start Multipeer keyed to that token (discovery info + invitation context). The remote invites
+   the peer carrying the token; the camera accepts only that token — so the already-paired Bluetooth
+   link authenticates the Wi-Fi leg (no second code).
+4. If they're on the same network, Multipeer connects in ~2 s and files route over it; otherwise it
+   never comes up and files fall back to Bluetooth. The `ChannelPill` in the UI reflects this
+   ("Bluetooth" vs "Wi-Fi"), driven by the transport's `fileChannelFast` event.
+
+### A note on threading
+All of `LayeredTransport`'s event handling is marshaled to the main actor (`MainActor.run`). The BLE
+`L2CAPStreamHandler` streams live on the main run loop, so calling into them from a background stream
+task races the outgoing buffer — a real crash we hit and fixed (concurrent `Data` mutation →
+`EXC_BREAKPOINT`, camera-only).
+
+## Historical: why the original Multipeer-only design was abandoned
 
 MultipeerConnectivity builds its encrypted data channel with ICE + DTLS over a **Wi-Fi** path —
-either an infrastructure network or Apple Wireless Direct Link (AWDL, "peer-to-peer Wi-Fi"). AWDL
-needs the **Wi-Fi radio powered on**. On modern iOS the framework does **not** carry the data
-session over classic Bluetooth; Bluetooth only ever assisted *discovery*. Device logs from a
-Wi-Fi-off attempt show the session looping `connecting -> notConnected`, with
-`DTLSState=DTLSNotConnected` and flows falling back to cellular — i.e. no usable path, so the
-handshake can't complete. This is an OS limitation, not an app bug.
-
-**Practical guidance:** the only confirmed-reliable setup is a **shared Wi-Fi network**. When there
-is no network available, the way to get one without a router is **Personal Hotspot** on one phone,
-joined by the other (a manual toggle — iOS has no API for an app to create a Wi-Fi AP). Relying on
-peer-to-peer Wi-Fi (AWDL) alone did not work in testing, so it should not be presented as an option.
-
-## If true Bluetooth-only is required (future work)
-
-To control the shutter with Wi-Fi entirely off, the app would need a **Core Bluetooth (BLE)**
-transport — a second `PeerTransport` implementation using a GATT service for the command/event
-channel. This is feasible because the wire protocol is small typed messages. The catch is
-throughput: BLE moves only a few KB/s, so photo/video **send-back would be impractical** — media
-would have to stay on the camera (which the app already supports). Scope: a new
-`BluetoothTransport`, a small chunking layer for messages, and a transport picker in the UI. Not
-built yet; tracked here pending a decision.
+infrastructure or AWDL — which needs the Wi-Fi radio on and, in practice, a shared network. On
+modern iOS it does **not** carry the data session over classic Bluetooth (Bluetooth only assisted
+discovery); off-network attempts loop `connecting -> notConnected`, confirmed on two device pairs.
+That OS limitation drove the Core Bluetooth primary + Wi-Fi fast lane design above.
 
 ## Wi-Fi Aware transport — implementation design (iOS 26+)
 
