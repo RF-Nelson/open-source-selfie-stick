@@ -144,7 +144,10 @@ import Testing
         // The transfer is named by capture id (so the remote can correlate it), not the display name.
         #expect(sent.name == TransferName.make(id: result.id, ext: "jpg"))
         #expect(await waitUntil { model.outgoingTransfer?.phase == .sent })
-        #expect(!FileManager.default.fileExists(atPath: sent.url.path))
+        // The outgoing file is kept for a possible re-download and wiped on disconnect.
+        #expect(FileManager.default.fileExists(atPath: sent.url.path))
+        transport.emit(.disconnected(remote))
+        #expect(await waitUntil { !FileManager.default.fileExists(atPath: sent.url.path) })
         #expect(transport.sentStates.contains { $0.isBusy })
         #expect(model.state.isBusy == false)
     }
@@ -163,6 +166,21 @@ import Testing
         try command(.requestFile(id: result.id, quality: .full))
         #expect(await waitUntil { transport.sentFiles.count == 1 })
         #expect(transport.sentFiles.first?.name == TransferName.make(id: result.id, ext: "jpg"))
+    }
+
+    @Test func canReRequestAfterCancel() async throws {
+        let model = await connectedModel()
+        transport.emit(.fileChannelFast(false))
+        _ = await waitUntil { model.fileChannelFast == false }
+        try command(.capturePhoto(sendBack: true, delay: 0))
+        #expect(await waitUntil { model.captures.count == 1 })
+        let result = try #require(transport.lastCaptureResult)
+        try command(.requestFile(id: result.id, quality: .full))
+        #expect(await waitUntil { transport.sentFiles.count == 1 })
+        // Cancel, then ask again — the camera kept the file, so it sends a second time.
+        try command(.cancelTransfer(id: result.id))
+        try command(.requestFile(id: result.id, quality: .full))
+        #expect(await waitUntil { transport.sentFiles.count == 2 })
     }
 
     @Test func deferredFilesFlushWhenAFastLaneAppears() async throws {

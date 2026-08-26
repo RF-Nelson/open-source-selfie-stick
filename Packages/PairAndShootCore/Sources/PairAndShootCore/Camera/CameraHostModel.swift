@@ -459,9 +459,8 @@ public final class CameraHostModel {
         case .fileSendProgress(let name, let fraction):
             outgoingTransfer = TransferStatus(name: name, fraction: fraction, phase: .sending)
         case .fileSendFinished(let name, let error):
-            if let (id, _) = TransferName.parse(name), let held = heldFiles.removeValue(forKey: id) {
-                try? FileManager.default.removeItem(at: held.url)
-            }
+            // Keep the held file (and any transient compressed copy) so a capture can be re-downloaded
+            // — e.g. after the remote cancels. Everything is wiped on disconnect.
             outgoingTransfer = TransferStatus(name: name, fraction: 1, phase: error.map { .failed($0) } ?? .sent)
         case .fileChannelFast(let fast):
             fileChannelFast = fast
@@ -524,11 +523,11 @@ public final class CameraHostModel {
     /// compressed qualities (falling back to the original if that isn't possible).
     private func sendHeldFile(id: UUID, quality: TransferQuality = .full) async {
         guard case .connected(let peer, _) = link, let held = heldFiles[id] else { return }
+        // Compressed photo: encode into a SEPARATE temp file and send that. The original held file is
+        // left untouched so full-quality and repeat downloads still work.
         if quality != .full, held.kind == .photo, let photoData = held.photoData,
            let compressed = await thumbnails.compressedPhoto(data: photoData, quality: quality),
-           let url = try? writeOutgoing(compressed, name: TransferName.make(id: id, ext: "jpg")) {
-            try? FileManager.default.removeItem(at: held.url)
-            heldFiles[id] = HeldFile(url: url, kind: .photo, photoData: photoData)
+           let url = try? writeOutgoing(compressed, name: "\(id.uuidString)-compressed.jpg") {
             let name = TransferName.make(id: id, ext: "jpg")
             outgoingTransfer = TransferStatus(name: name, fraction: 0, phase: .sending)
             transport.sendFile(at: url, named: name, to: peer)
@@ -559,9 +558,11 @@ public final class CameraHostModel {
     }
 
     private func discardHeldFiles() {
-        for held in heldFiles.values { try? FileManager.default.removeItem(at: held.url) }
         heldFiles.removeAll()
         pendingCaptureIDs.removeAll()
+        // Wipe the whole outbox (originals and any compressed copies).
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("PairAndShootOutbox", isDirectory: true)
+        try? FileManager.default.removeItem(at: directory)
     }
 
     private static func stamp() -> String {
