@@ -40,8 +40,12 @@ public final class LayeredTransport: PeerTransport, @unchecked Sendable {
         (events, continuation) = AsyncStream.makeStream(of: TransportEvent.self, bufferingPolicy: .unbounded)
         let bleEvents = ble.events
         let wifiEvents = wifi.events
-        Task.detached { [weak self] in for await event in bleEvents { self?.handleBLE(event) } }
-        Task.detached { [weak self] in for await event in wifiEvents { self?.handleWiFi(event) } }
+        // Handle both legs' events on the main actor. The BLE transport's L2CAP streams and Core
+        // Bluetooth managers all run on the main run loop, so calling into them (send, advertise) from
+        // these background stream tasks would race the model's own main-thread sends on the same
+        // buffer. Marshaling here keeps every transport call single-threaded.
+        Task.detached { [weak self] in for await event in bleEvents { await MainActor.run { self?.handleBLE(event) } } }
+        Task.detached { [weak self] in for await event in wifiEvents { await MainActor.run { self?.handleWiFi(event) } } }
     }
 
     // MARK: PeerTransport
