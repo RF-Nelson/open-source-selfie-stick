@@ -12,6 +12,14 @@ enum TransportFactory {
     /// at the next launch, the last attempt didn't finish (likely crashed), so we turn Wi-Fi Aware
     /// off to avoid a crash loop the user can't escape (Settings lives behind a role screen).
     static let wifiAwarePendingKey = "wifiAwareStartPending"
+    /// UserDefaults flag toggled in Settings. Routes to the Bluetooth-only transport (control works with
+    /// no Wi-Fi at all; photos/videos can't travel back). Stage 1 of the layered design — a debug/opt-in
+    /// path for now, to be superseded by the automatic layered transport.
+    static let bluetoothPreferenceKey = "useBluetooth"
+
+    static var bluetoothEnabled: Bool {
+        UserDefaults.standard.bool(forKey: bluetoothPreferenceKey)
+    }
 
     /// Whether this device can do Wi-Fi Aware at all (iOS 26 + hardware support).
     static var wifiAwareSupported: Bool {
@@ -24,6 +32,9 @@ enum TransportFactory {
     }
 
     static func make(displayName: String) -> any PeerTransport {
+        if bluetoothEnabled {
+            return BluetoothTransport(displayName: displayName)
+        }
         if #available(iOS 26.0, *), wifiAwareEnabled {
             UserDefaults.standard.set(true, forKey: wifiAwarePendingKey)
             return WiFiAwareTransport(displayName: displayName)

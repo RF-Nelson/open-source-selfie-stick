@@ -11,6 +11,8 @@
 		<string>_pairandshoot._tcp</string>
 		<string>_pairandshoot._udp</string>
 	</array>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Pair &amp; Shoot uses Bluetooth to connect the remote and camera when they aren't on the same Wi‑Fi network.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Pair &amp; Shoot uses the camera to take the photos and videos you ask for from the paired remote.</string>
 	<key>NSLocalNetworkUsageDescription</key>

@@ -39,6 +39,10 @@ public enum TransportError: Error, Sendable, Equatable {
 
 public extension PeerTransport {
     var requiresAppLevelPairing: Bool { true }
+    /// Whether this link can carry full-resolution photos/videos back to the remote. True for Wi-Fi
+    /// transports; false for Bluetooth (too slow), so the camera captures and saves locally without
+    /// offering to send the file. The layered transport reports true only while its Wi-Fi leg is up.
+    var supportsFileTransfer: Bool { true }
 }
 
 /// Everything the app needs from a peer-to-peer link. `MultipeerTransport` is the real one;
@@ -49,6 +53,10 @@ public protocol PeerTransport: AnyObject, Sendable {
     /// system pairing, so it does (true, the default). Wi-Fi Aware pairs devices at the OS level, so
     /// the app-level challenge/pair is skipped (false).
     var requiresAppLevelPairing: Bool { get }
+    /// Whether full-resolution photos/videos can travel back to the remote over this link (see the
+    /// default extension). Declared here so a call through `any PeerTransport` dispatches to the
+    /// conformer's override rather than the extension default.
+    var supportsFileTransfer: Bool { get }
     /// Single-consumer stream: exactly one owner iterates it.
     var events: AsyncStream<TransportEvent> { get }
     var connectedPeers: [Peer] { get }

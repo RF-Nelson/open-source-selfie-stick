@@ -283,7 +283,7 @@ public final class CameraHostModel {
             let photo = try await device.capturePhoto()
             let name = "IMG_\(Self.stamp()).\(photo.fileExtension)"
             var result = CaptureResult(kind: .photo, byteCount: photo.data.count, willSendFile: false, fileName: name)
-            if sendBack, case .connected(let peer, _) = link {
+            if sendBack, transport.supportsFileTransfer, case .connected(let peer, _) = link {
                 let url = try writeOutgoing(photo.data, name: name)
                 outgoingFiles[name] = url
                 outgoingTransfer = TransferStatus(name: name, fraction: 0, phase: .sending)
@@ -354,7 +354,7 @@ public final class CameraHostModel {
             let name = "VID_\(Self.stamp()).\(movie.url.pathExtension.isEmpty ? "mov" : movie.url.pathExtension)"
             let size = (try? FileManager.default.attributesOfItem(atPath: movie.url.path)[.size] as? Int) ?? 0
             var result = CaptureResult(kind: .video, byteCount: size, willSendFile: false, fileName: name, duration: movie.duration)
-            if pendingVideoSendBack, case .connected(let peer, _) = link {
+            if pendingVideoSendBack, transport.supportsFileTransfer, case .connected(let peer, _) = link {
                 outgoingFiles[name] = movie.url
                 outgoingTransfer = TransferStatus(name: name, fraction: 0, phase: .sending)
                 transport.sendFile(at: movie.url, named: name, to: peer)
