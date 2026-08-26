@@ -550,14 +550,12 @@ public final class CameraHostModel {
         }
     }
 
-    /// Stop delivering a capture the remote cancelled — abort an in-flight send and drop the held file.
+    /// Stop delivering a capture the remote cancelled — abort the in-flight send but KEEP the file so
+    /// the remote can ask for it again (or a Wi-Fi lane can flush it later).
     private func cancelHeldSend(id: UUID) {
-        pendingCaptureIDs.remove(id)
         transport.cancelFileSend()
-        if let held = heldFiles.removeValue(forKey: id) {
-            try? FileManager.default.removeItem(at: held.url)
-        }
         outgoingTransfer = nil
+        if heldFiles[id] != nil { pendingCaptureIDs.insert(id) }
     }
 
     private func discardHeldFiles() {

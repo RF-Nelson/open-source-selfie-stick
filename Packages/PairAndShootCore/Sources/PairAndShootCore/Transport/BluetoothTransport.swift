@@ -184,20 +184,28 @@ public final class BluetoothTransport: NSObject, PeerTransport, @unchecked Senda
         handler.send(tagged(.fileBegin, header))   // kicks the flush loop, which pulls chunks on demand
     }
 
-    /// Produce the next outgoing frame for the streaming file send (a chunk, then one terminator).
+    /// Produce the next outgoing frame for the streaming file send (a chunk, then one terminator), and
+    /// report progress as chunks are handed off (which, because we only buffer ~one chunk, tracks the
+    /// real over-air transfer rather than racing ahead of it).
     private func produceNextChunk() -> Data? {
-        lock.withLock {
+        let outcome: (payload: Data, progress: (name: String, fraction: Double)?)? = lock.withLock {
             guard var send = fileSend else { return nil }
             if send.offset < send.data.count {
                 let end = min(send.offset + Self.fileChunkBytes, send.data.count)
                 let chunk = send.data.subdata(in: send.offset..<end)
                 send.offset = end
                 fileSend = send
-                return tagged(.fileChunk, chunk)
+                let fraction = send.data.isEmpty ? 1 : Double(send.offset) / Double(send.data.count)
+                return (tagged(.fileChunk, chunk), (send.name, fraction))
             }
             fileSend = nil   // all chunks sent — emit the terminator once, then nil next time
-            return tagged(.fileEnd, Data())
+            return (tagged(.fileEnd, Data()), nil)
         }
+        guard let outcome else { return nil }
+        if let progress = outcome.progress {
+            continuation.yield(.fileSendProgress(name: progress.name, fraction: progress.fraction))
+        }
+        return outcome.payload
     }
 
     private func tagged(_ tag: FrameTag, _ body: Data) -> Data {

@@ -231,7 +231,9 @@ private struct ControlDeck: View {
                 model.setMode($0)
             }
             ShutterButton(look: .forState(state), size: 124) { model.shutter() }
-            Text(hint(state))
+                .disabled(model.isReceivingFile)
+                .opacity(model.isReceivingFile ? 0.4 : 1)
+            Text(model.isReceivingFile ? "Downloading… shutter paused" : hint(state))
                 .font(.footnote)
                 .foregroundStyle(Theme.inkMuted)
                 .padding(.bottom, 12)
@@ -307,11 +309,11 @@ private struct ControlDeck: View {
                     Button(role: .destructive) {
                         model.cancelDownload(capture)
                     } label: {
-                        Label("Cancel download", systemImage: "xmark.circle")
+                        Label("Cancel download", systemImage: "xmark.circle.fill")
                             .font(.subheadline.weight(.semibold))
                     }
-                    .buttonStyle(.bordered)
-                    .tint(.white)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.red)
                 }
                 Button {
                     ExternalApp.openPhotos()
