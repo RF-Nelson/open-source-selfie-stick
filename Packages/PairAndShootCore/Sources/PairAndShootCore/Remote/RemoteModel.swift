@@ -41,6 +41,9 @@ public final class RemoteModel {
     private var downloadedCaptureIDs: Set<UUID> = []
     /// The capture whose file is transferring right now (auto over Wi-Fi, or a Bluetooth download).
     private var downloadingCaptureID: UUID?
+    /// Fails a download that makes no progress for a while, so a stalled transfer can't permanently
+    /// block the one-at-a-time download slot. Re-armed on every progress update.
+    @ObservationIgnored private var downloadWatchdog: Task<Void, Never>?
 
     public var timerSeconds = 0
     public var sendBackPhotos = true
@@ -224,13 +227,37 @@ public final class RemoteModel {
         downloadingCaptureID = capture.id
         transfer = TransferStatus(name: TransferName.make(id: capture.id, ext: "dat"), fraction: 0, phase: .receiving)
         send(.requestFile(id: capture.id, quality: quality))
+        armDownloadWatchdog(for: capture.id)
     }
 
     /// Stop a download the user started.
     public func cancelDownload(_ capture: CaptureResult) {
         send(.cancelTransfer(id: capture.id))
         if downloadingCaptureID == capture.id { downloadingCaptureID = nil }
+        endDownloadWatchdog()
         transfer = nil
+    }
+
+    private func armDownloadWatchdog(for id: UUID) {
+        downloadWatchdog?.cancel()
+        downloadWatchdog = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(15))
+            guard !Task.isCancelled else { return }
+            self?.failStalledDownload(id)
+        }
+    }
+
+    private func endDownloadWatchdog() {
+        downloadWatchdog?.cancel()
+        downloadWatchdog = nil
+    }
+
+    private func failStalledDownload(_ id: UUID) {
+        guard downloadingCaptureID == id else { return }
+        send(.cancelTransfer(id: id))
+        downloadingCaptureID = nil
+        transfer = nil
+        show("The download stalled — try again.")
     }
 
     // MARK: Events
@@ -275,6 +302,7 @@ public final class RemoteModel {
             didReceiveChallenge = false
             fileChannelFast = nil
             downloadingCaptureID = nil
+            endDownloadWatchdog()
             if expectsDisconnect {
                 expectsDisconnect = false
                 isReconnecting = false
@@ -300,15 +328,20 @@ public final class RemoteModel {
             guard connection.peer?.id == peer.id else { return }
             handleMessage(data)
         case .fileReceiveStarted(let name, _):
-            downloadingCaptureID = TransferName.parse(name)?.id
+            let id = TransferName.parse(name)?.id
+            downloadingCaptureID = id
             transfer = TransferStatus(name: name, fraction: 0, phase: .receiving)
+            if let id { armDownloadWatchdog(for: id) }
         case .fileReceiveProgress(let name, let fraction):
             if transfer?.name == name { transfer?.fraction = fraction }
+            if let id = TransferName.parse(name)?.id, id == downloadingCaptureID { armDownloadWatchdog(for: id) }
         case .fileReceived(let name, let url, _):
+            endDownloadWatchdog()
             let id = TransferName.parse(name)?.id
             Task { await save(name: name, from: url, captureID: id) }
         case .fileReceiveFailed(let name, let error):
             if downloadingCaptureID == TransferName.parse(name)?.id { downloadingCaptureID = nil }
+            endDownloadWatchdog()
             // A cancel (by either side) isn't a failure worth alarming the user about.
             transfer = error.lowercased().contains("cancel") ? nil : TransferStatus(name: name, fraction: 0, phase: .failed(error))
         case .fileSendProgress, .fileSendFinished:

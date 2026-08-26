@@ -88,15 +88,19 @@ final class L2CAPStreamHandler: NSObject, StreamDelegate {
                 }
                 if written > 0 { outbox.removeSubrange(0..<written) } else { break }
             }
-            // Buffer drained and there's room: pull the next file chunk and keep going.
-            if outbox.isEmpty, output.hasSpaceAvailable, let payload = nextChunk?() {
+            // If the buffer still has bytes, or the stream is momentarily full, we're not done — the
+            // next `hasSpaceAvailable` event resumes us. Crucially, do NOT treat this as completion:
+            // an empty buffer can just mean the kernel filled up while a file is still being produced.
+            guard outbox.isEmpty, output.hasSpaceAvailable else { return }
+            // Buffer empty and there's room: pull the next chunk, or finish when the producer is done.
+            if let payload = nextChunk?() {
                 outbox.append(MessageFraming.frame(payload))
                 continue
             }
             break
         }
-        // Fully drained with nothing left to produce → the send is complete.
-        if outbox.isEmpty, let drained = onDrained {
+        // Reached only when the buffer is empty, space is available, and the producer is exhausted.
+        if let drained = onDrained {
             onDrained = nil
             drained()
         }
