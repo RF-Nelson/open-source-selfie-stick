@@ -15,7 +15,7 @@ struct PrivacyHelpView: View {
                 }
                 Section("Copies and permissions") {
                     Text("Choose where to keep full copies in each role's settings. The remote receives a small preview of each capture. If a full copy is waiting, tap Download or connect both devices to the same Wi-Fi network.")
-                    Text("Camera access is needed only on the camera device. Allow Microphone to record videos with sound; photos still work if it is denied. Photos access saves pictures and videos without reading your existing library. You can change permissions in Settings.")
+                    Text("Camera access is needed only on the camera device. Allow Microphone to record videos with sound; if it is denied, videos record without sound. Photos access saves pictures and videos without reading your existing library. You can change permissions in Settings.")
                 }
                 Section("Privacy") {
                     NavigationLink {

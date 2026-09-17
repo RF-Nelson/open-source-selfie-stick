@@ -70,10 +70,13 @@ public protocol CameraDevice: AnyObject, Sendable {
     func recordingDuration() async -> TimeInterval
     /// An interruption or system limit stopped recording, and its completed file can be collected.
     func recordingHasFinished() async -> Bool
+    /// The recording in progress has no audio track because the microphone isn't allowed.
+    func isRecordingWithoutSound() async -> Bool
 }
 
 public extension CameraDevice {
     func recordingHasFinished() async -> Bool { false }
+    func isRecordingWithoutSound() async -> Bool { false }
 }
 
 /// Produces the small JPEG previews that travel inside `CaptureResult`, and re-encodes photos smaller
@@ -113,6 +116,7 @@ public final class FakeCameraDevice: CameraDevice, @unchecked Sendable {
     private var _recordingStart: Date?
     private var _startError: CameraDeviceError?
     private var _captureError: CameraDeviceError?
+    private var _microphoneDenied = false
 
     public init(capabilities: CameraCapabilities = CameraCapabilities(hasFlash: true, hasFrontCamera: true, canRecordVideo: true)) {
         _capabilities = capabilities
@@ -124,6 +128,7 @@ public final class FakeCameraDevice: CameraDevice, @unchecked Sendable {
 
     public func failStart(with error: CameraDeviceError?) { lock.withLock { _startError = error } }
     public func failCapture(with error: CameraDeviceError?) { lock.withLock { _captureError = error } }
+    public func denyMicrophone(_ denied: Bool = true) { lock.withLock { _microphoneDenied = denied } }
 
     public func start() async throws -> CameraCapabilities {
         if let error = lock.withLock({ _startError }) { throw error }
@@ -167,5 +172,9 @@ public final class FakeCameraDevice: CameraDevice, @unchecked Sendable {
 
     public func recordingDuration() async -> TimeInterval {
         lock.withLock { _recordingStart.map { Date().timeIntervalSince($0) } ?? 0 }
+    }
+
+    public func isRecordingWithoutSound() async -> Bool {
+        lock.withLock { _isRecording && _microphoneDenied }
     }
 }

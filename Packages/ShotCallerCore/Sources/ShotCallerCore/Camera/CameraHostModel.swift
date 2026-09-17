@@ -99,6 +99,7 @@ public final class CameraHostModel {
     @ObservationIgnored private var isActive = false
     @ObservationIgnored private var isStopped = false
     @ObservationIgnored private var isStartingCamera = false
+    @ObservationIgnored private var restartCameraAfterStart = false
     @ObservationIgnored private var isUpdatingSettings = false
     @ObservationIgnored private var settingsUpdateTask: Task<Void, Never>?
     @ObservationIgnored private var shutdownTask: Task<Void, Never>?
@@ -145,12 +146,26 @@ public final class CameraHostModel {
     /// Rechecks camera authorization after a trip to Settings and resumes after backgrounding.
     public func retryCamera() async {
         if let shutdownTask { await shutdownTask.value }
-        guard !isStopped, !isStartingCamera, !state.isRecording else { return }
+        guard !isStopped, !state.isRecording else { return }
+        guard !isStartingCamera else {
+            // A start that began before a suspend abandons itself; run again once it has unwound so
+            // a quick background/foreground trip can't leave the camera stuck on "starting".
+            restartCameraAfterStart = true
+            return
+        }
         guard !isActive || availability != .ready else { return }
         isActive = true
         isStartingCamera = true
         availability = .starting
-        defer { isStartingCamera = false }
+        await startDevice()
+        isStartingCamera = false
+        if restartCameraAfterStart {
+            restartCameraAfterStart = false
+            await retryCamera()
+        }
+    }
+
+    private func startDevice() async {
         do {
             let updatedCapabilities = try await device.start()
             guard isActive else { return }
@@ -471,6 +486,9 @@ public final class CameraHostModel {
             state.recordingDuration = 0
             broadcastState()
             startTicker()
+            if await device.isRecordingWithoutSound() {
+                show("Recording without sound. Allow Microphone in Settings to add audio.")
+            }
         } catch {
             let reason = "Couldn't start recording. \(Self.describe(error))"
             show(reason)
@@ -613,6 +631,7 @@ public final class CameraHostModel {
             outgoingTransfer = TransferStatus(name: name, fraction: fraction, phase: .sending)
         case .fileSendFinished(let name, let error):
             let completedID = TransferName.parse(name)?.id
+            let wasCanceled = completedID != nil && cancelingSendID == completedID
             if activeSendID == completedID {
                 activeSendID = nil
                 activeSendToken = nil
@@ -622,7 +641,9 @@ public final class CameraHostModel {
             }
             // Keep the held file (and any transient compressed copy) so a capture can be re-downloaded
             // — e.g. after the remote cancels. Everything is wiped on disconnect.
-            outgoingTransfer = TransferStatus(name: name, fraction: 1, phase: error.map { .failed($0) } ?? .sent)
+            // A cancel the remote asked for isn't a failure worth a banner on the camera.
+            outgoingTransfer = wasCanceled ? nil
+                : TransferStatus(name: name, fraction: 1, phase: error.map { .failed($0) } ?? .sent)
             // If an automatic Wi-Fi send failed (the fast lane dropped mid-transfer), re-offer the
             // capture as a Bluetooth download instead of stranding it: flip it to "available" and tell
             // the remote so a download button appears; it also flushes if a Wi-Fi lane returns.

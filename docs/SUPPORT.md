@@ -21,7 +21,7 @@ If the camera doesn't appear, make sure both devices use the same connection met
 
 ## Permissions and missing copies
 
-Camera access belongs on the device taking pictures. Video recording requires Microphone access; photos remain available if it is denied. Photos access lets either device save copies without reading your existing library. Bluetooth and local network permissions let the devices connect. If a permission was denied, open **Settings → Apps → Shot Caller** to change it, then return to the app.
+Camera access belongs on the device taking pictures. Microphone access adds sound to videos; if it is denied, videos record without sound and the camera says so. Photos access lets either device save copies without reading your existing library. Bluetooth and local network permissions let the devices connect. If a permission was denied, open **Settings → Apps → Shot Caller** to change it, then return to the app.
 
 Check the camera's **Keep copies** setting and the remote's copy preferences. The remote receives previews even when full copies are off. A preview does not mean the original has been saved. If a transfer is waiting, keep both devices open and connected until it finishes. Captures that were not saved are temporary; save wanted copies before ending the session.
 

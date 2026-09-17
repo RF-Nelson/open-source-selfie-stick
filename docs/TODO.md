@@ -11,6 +11,16 @@ regression coverage. This does not verify Apple's pairing UI or the radio path o
 Test two compatible devices, reconnect, cancellation, a second pairing, both role directions,
 permission changes, and photo/video delivery. See [TRANSPORT.md](TRANSPORT.md).
 
+Also exercise on hardware: background the remote mid-session and return (it should reconnect to the
+same camera without asking for the code); background the camera and return; cancel a Bluetooth
+download (no "failed" banner on the camera, and the file can be requested again); record video with
+Microphone denied (silent video plus a notice, not a refusal).
+
+Wi-Fi Aware watch item: after a session ends the camera cancels its listener and the host model
+immediately re-advertises, so a new listener task can start while the cancelled one is still
+unwinding. If the device run shows a publish conflict there, make the new listener await the old one
+(as `suspendForPairing` already does).
+
 ## Pre-review
 
 - **Verify the first-use setup on devices.** Role-specific explanations and optional saving are

@@ -111,13 +111,14 @@ import Testing
         let model = await makeModel()
         let answers = Answers()
         transport.emit(.invitation(from: remote, context: nil, respond: answers.record))
-        _ = await waitUntil { answers.values == [true] }
+        #expect(await waitUntil { answers.values == [true] })
         transport.simulateConnected(remote)
-        _ = await waitUntilValue { transport.sentChallengeNonce }
+        #expect(await waitUntilValue { transport.sentChallengeNonce } != nil)
         // A capture command before pairing must be ignored.
         try command(.capturePhoto(sendBack: false, delay: 0))
         try? await Task.sleep(for: .milliseconds(30))
         #expect(device.photoCount == 0)
+        await model.stop()
     }
 
     @Test func secondRemoteIsRefusedWhileOneIsConnected() async {
@@ -316,6 +317,18 @@ import Testing
         #expect(store.photos.count == 1)
         #expect(!FileManager.default.fileExists(atPath: url.path))
         await model.stop()
+    }
+
+    @Test func aDeniedMicrophoneStillRecordsAndSaysTheVideoIsSilent() async {
+        let model = await makeModel()
+        device.denyMicrophone()
+        model.perform(.setMode(.video))
+        #expect(await waitUntil { model.state.mode == .video })
+        model.perform(.startRecording(sendBack: false, delay: 0))
+        #expect(await waitUntil { model.state.isRecording })
+        #expect(await waitUntil { model.notice?.contains("without sound") == true })
+        await model.stop()
+        #expect(store.videos.count == 1)
     }
 
     @Test func leavingTheCameraFinishesAndSavesTheRecording() async {

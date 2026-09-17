@@ -219,6 +219,35 @@ import Testing
         model.stop()
     }
 
+    @Test func returningFromTheBackgroundReconnectsToTheSameCameraWithTheSameCode() async throws {
+        let model = await connectedModel()
+        model.suspend()
+        #expect(model.connection == .idle)
+        #expect(model.isReconnecting)
+        let invitesBefore = transport.invitations.count
+        model.resume()
+        #expect(model.connection == .browsing)
+        transport.emit(.peerFound(camera))
+        #expect(await waitUntil { transport.invitations.count == invitesBefore + 1 })
+        #expect(model.connection == .connecting(camera))
+        transport.simulateConnected(camera)
+        transport.emit(.message(try encodedEvent(.challenge("fedcba9876543210")), from: camera))
+        #expect(await waitUntil { transport.sentMessages.count >= 2 })
+        transport.emit(.message(try encodedEvent(.hello(HelloInfo(appVersion: "2.0", displayName: "Cam", capabilities: CameraCapabilities()))), from: camera))
+        #expect(await waitUntil { model.connection == .connected(camera) })
+        #expect(!model.isReconnecting)
+        model.stop()
+        #expect(!model.isReconnecting)
+    }
+
+    @Test func aDeliberateDisconnectDoesNotReconnectAfterTheBackground() async {
+        let model = await connectedModel()
+        model.disconnect()
+        model.suspend()
+        #expect(!model.isReconnecting)
+        model.stop()
+    }
+
     @Test func failedSaveRetainsTheReceivedFileForPermissionRecovery() async throws {
         let model = await connectedModel()
         store.fail(with: CameraDeviceError.permissionDenied("photo library"))

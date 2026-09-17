@@ -95,11 +95,22 @@ public final class RemoteModel {
         }
     }
 
+    /// Leaving the foreground drops the link. Remember a paired camera (and the code it accepted)
+    /// so `resume()` reconnects by itself instead of making the person pair again after a glance
+    /// at another app.
     public func suspend() {
+        let pairedCamera = connection.isConnected ? connection.peer?.displayName : nil
+        let code = pendingCode
         disconnect()
         transport.stopBrowsing()
         connection = .idle
         cameras = []
+        if let pairedCamera, !isStopped {
+            reconnectName = pairedCamera
+            pendingCode = code
+            reconnectAttemptsLeft = 3
+            isReconnecting = true
+        }
     }
 
     public func resume() {

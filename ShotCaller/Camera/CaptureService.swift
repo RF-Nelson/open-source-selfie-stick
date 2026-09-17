@@ -183,6 +183,10 @@ actor CaptureService: CameraDevice {
         return RecordedMovie(url: url, duration: duration.isFinite ? duration : 0)
     }
 
+    func isRecordingWithoutSound() -> Bool {
+        movieOutput.isRecording && audioInput == nil
+    }
+
     func recordingHasFinished() -> Bool {
         movieDelegate != nil && !isStartingRecording && !movieOutput.isRecording
     }
@@ -344,24 +348,30 @@ actor CaptureService: CameraDevice {
         photoOutput.maxPhotoQualityPrioritization = .quality
     }
 
+    /// A denied or missing microphone never blocks video: the movie records without an audio track
+    /// and the host says so. Rechecked on every attempt, so granting access in Settings recovers
+    /// without relaunching.
     private func addAudioInputIfPermitted() async throws {
-        // Recheck on every attempt so granting access in Settings recovers without relaunching.
         var status = AVCaptureDevice.authorizationStatus(for: .audio)
         if status == .notDetermined {
             status = await AVCaptureDevice.requestAccess(for: .audio) ? .authorized : .denied
         }
-        guard status == .authorized else { throw CameraDeviceError.permissionDenied("microphone") }
         guard shouldRun, session.isRunning, !Task.isCancelled else { throw CancellationError() }
-        guard audioInput == nil else { return }
-        guard let microphone = AVCaptureDevice.default(for: .audio) else {
-            throw CameraDeviceError.failed("The microphone isn't available right now. Try again.")
+        guard status == .authorized else {
+            if let audioInput {
+                session.beginConfiguration()
+                session.removeInput(audioInput)
+                session.commitConfiguration()
+                self.audioInput = nil
+            }
+            return
         }
-        let input = try AVCaptureDeviceInput(device: microphone)
+        guard audioInput == nil,
+              let microphone = AVCaptureDevice.default(for: .audio),
+              let input = try? AVCaptureDeviceInput(device: microphone) else { return }
         session.beginConfiguration()
         defer { session.commitConfiguration() }
-        guard session.canAddInput(input) else {
-            throw CameraDeviceError.failed("The microphone isn't available right now. Try again.")
-        }
+        guard session.canAddInput(input) else { return }
         session.addInput(input)
         audioInput = input
     }

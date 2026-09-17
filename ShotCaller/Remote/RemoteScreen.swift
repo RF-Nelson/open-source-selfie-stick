@@ -423,9 +423,9 @@ private struct ControlDeck: View {
         guard let state else { return "" }
         switch state.mode {
         case .photo:
-            return model.sendBackPhotos ? "Photo copies are requested on this device" : "Photo copies are off on this device"
+            return model.sendBackPhotos ? "Photos are sent to this device" : "Photos aren’t sent to this device"
         case .video:
-            return model.sendBackVideos ? "Video copies are requested (Wi-Fi recommended)" : "Video copies are off on this device"
+            return model.sendBackVideos ? "Videos are sent to this device (Wi-Fi recommended)" : "Videos aren’t sent to this device"
         }
     }
 }

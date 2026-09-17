@@ -55,4 +55,28 @@ private final class DelayedFileTransport: PeerTransport, @unchecked Sendable {
         #expect(TransferName.parse(transport.sentNames[2])?.id == first.id)
         await model.stop()
     }
+
+    @Test func aCancelTheRemoteAskedForIsNotShownAsAFailedTransfer() async throws {
+        let transport = DelayedFileTransport()
+        let model = CameraHostModel(transport: transport, device: FakeCameraDevice(), mediaStore: FakeMediaStore(), appVersion: "2.0")
+        await model.start()
+        transport.base.simulateConnected(Peer(id: "remote", displayName: "Remote"))
+        transport.base.emit(.fileChannelFast(false))
+        #expect(await waitUntil { model.link.isConnected && model.fileChannelFast == false })
+        model.perform(.capturePhoto(sendBack: true, delay: 0))
+        #expect(await waitUntil { model.captures.count == 1 })
+        let capture = model.captures[0]
+        model.perform(.requestFile(id: capture.id, quality: .full))
+        #expect(await waitUntil { transport.sentNames.count == 1 })
+        model.perform(.cancelTransfer(id: capture.id))
+        #expect(await waitUntil { transport.cancelCount == 1 })
+        transport.base.emit(.fileSendFinished(name: transport.sentNames[0], error: "Canceled"))
+        #expect(await waitUntil { model.pendingTransferCount == 1 })
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(model.outgoingTransfer == nil)
+        // The file is still held, so the remote can ask again.
+        model.perform(.requestFile(id: capture.id, quality: .full))
+        #expect(await waitUntil { transport.sentNames.count == 2 })
+        await model.stop()
+    }
 }
