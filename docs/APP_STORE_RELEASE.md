@@ -51,7 +51,8 @@ Record device models, OS versions, app build, connection method, and the result 
 | --- | --- |
 | Fresh install; each role | The explanation precedes relevant permission prompts; choosing Remote does not prompt for Camera or Microphone. |
 | Deny Camera; return from Settings | Camera explains the problem and recovers after permission is granted. Remote remains usable. |
-| Deny Photos or Microphone | The app clearly reports saving/audio limitations and preserves supported capture/control behavior. |
+| Deny Photos or Microphone | The app clearly reports saving/audio limitations and preserves supported capture/control behavior. With Microphone denied, video records without sound and the camera shows a notice. |
+| Background the remote, then the camera, mid-session | The link drops; on return the remote reconnects to the same camera without asking for the code. A recording in progress is finished and saved first. |
 | Deny Bluetooth / Local Network | Useful recovery instructions; no endless spinner or crash; control/transfer fallback behaves as described. |
 | Default transport, iOS 18 + current iOS | Pair, reject a wrong code, capture a photo/video, receive a copy, disconnect, reconnect. |
 | Bluetooth only / Wi-Fi returns | Deferred download, size choice, progress, cancel, and automatic fast transfer work without duplicate saves. |

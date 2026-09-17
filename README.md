@@ -90,6 +90,7 @@ Implemented since that hardware check:
 - First-use setup per role, optional saving preferences, clearer permission recovery, adaptive screen layouts, and capture previews that distinguish receipt from a successful save.
 - Wi-Fi Aware pairing/discovery handoff, reuse of the system-selected endpoint, and single-peer connection handling.
 - Capture/save recovery and transfer lifecycle fixes, with meaningful model and transport regression coverage in the core package.
+- A backgrounded remote reconnects to its camera without re-pairing; a denied microphone records silent video with a notice.
 - Privacy manifest, bundled policy, release-only diagnostic privacy, and separate App Store archive tooling.
 
 These changes still require physical testing on supported phones/iPads, older supported OS versions, and Wi-Fi Aware-compatible devices. No App Store submission or approval is implied. See [docs/TODO.md](docs/TODO.md) and the [release acceptance matrix](docs/APP_STORE_RELEASE.md).

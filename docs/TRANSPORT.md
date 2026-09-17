@@ -172,12 +172,26 @@ the transport and collides (`NWError -11999` / `-11988`); after pairing, the tra
 service. (2) The remote's "You are <name>" hint is shown only on the code-pairing path
 (`requiresCode`); on Wi-Fi Aware iOS presents system-assigned device names itself.
 
-**Debugging without syslog.** `idevicesyslog` is unreliable on this hardware, so the app writes a
+**Debugging without syslog.** `idevicesyslog` is unreliable on this hardware, so **Debug builds** write a
 `Trace` log to `Documents/transport.log`, pulled with
 `devicectl device copy from --domain-type appDataContainer --domain-identifier <bundle id>
 --source Documents/transport.log`. `Trace.reset()` clears once per launch so reconnect churn
-accumulates into one file. Strip or keep the `Trace` calls at release (they no-op if the file can't
-be written).
+accumulates into one file. Since 2026-09-16 `Trace` is `#if DEBUG`: Release/TestFlight builds neither
+evaluate the messages nor write the file (it held peer names), and the container pull needs a
+development-signed build anyway. To debug a hardware problem, install a Debug build with
+`Tools/device-debug.sh`.
+
+## Send queue, cancels, and backgrounding (2026-09-16/17)
+
+- The camera sends held files **one at a time, in capture order** (`CameraHostModel.sendQueue`). Every
+  transport must emit `fileSendFinished` when its send slot frees, **including on cancel**; the queue
+  waits for that event before starting the next file. A finish for a cancel the remote asked for clears
+  the camera's banner instead of showing "failed".
+- Backgrounding either role drops the link on purpose (the camera also finishes a recording first).
+  A paired remote remembers its camera and the code it proved and reconnects on `resume()` — three
+  tries, the same path as an unexpected drop. A deliberate `disconnect()` does not.
+- Unsent originals with no copy in the camera's Photos survive a drop as "unsaved" for a retry; they
+  are deleted only when the camera screen closes (after a warning).
 
 
 ## Wi-Fi Aware — pairing handoff and cancellation (2026-09-16)

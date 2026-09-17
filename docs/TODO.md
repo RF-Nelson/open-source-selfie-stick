@@ -4,6 +4,30 @@ What's left before (and around) an App Store submission. Keep this current; dele
 
 ## Release milestone: physical validation
 
+**Where things stand (2026-09-17, master @ 719c0e9, pushed).** TestFlight internal build
+`202609170310` contains Codex's release pass (478f384) plus the review fixes (719c0e9).
+*Verified:* 78 core tests pass; device-SDK build succeeds; archive, export and upload succeeded.
+*Not verified:* anything on hardware — no radio, permission-prompt, capture or layout behaviour from
+either commit has run on a device. Record results against the matrix in
+[APP_STORE_RELEASE.md](APP_STORE_RELEASE.md).
+
+**Run order on the two devices (default Automatic connection first):**
+1. Fresh install on both; pick roles; confirm the setup sheet precedes prompts and Remote never asks
+   for Camera/Microphone.
+2. Pair with the code (try one wrong code), take a photo, record a video, confirm copies arrive.
+3. Wi-Fi off on one device: deferred photo → Download (each size), cancel mid-download, download
+   again; Wi-Fi back on → pending files flush by themselves.
+4. Background/return checks and the microphone check listed below.
+5. Deny Photos on each role: shot is kept as "unsaved", retry after granting in Settings.
+6. Close the camera mid-recording and with unsaved shots: warning, then the recording is saved.
+7. iPad + landscape + Larger Text pass over both screens.
+8. Only then Wi-Fi Aware (toggle on both home screens), if both devices support it.
+
+**Decided, don't re-litigate:** `Trace` stays DEBUG-only (TestFlight builds write no
+`transport.log`; use `Tools/device-debug.sh` for a cabled Debug install when something fails). The
+"Open Photos" buttons stay removed in favour of the in-app preview. The shutter stays paused during
+a download (see Nice to have).
+
 The earlier default Bluetooth + Wi-Fi flow was verified on two physical devices running iOS 26.
 The current changes need a new device acceptance run. Wi-Fi Aware's system-pairing-to-data handoff,
 selected endpoint, and single-peer connection handling are implemented, with model/transport
