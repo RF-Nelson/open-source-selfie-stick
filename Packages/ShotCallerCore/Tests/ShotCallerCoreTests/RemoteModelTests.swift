@@ -207,4 +207,75 @@ import Testing
         #expect(await waitUntil { model.notice?.contains("different version") == true })
         #expect(transport.connectedPeers.isEmpty)
     }
+    @Test func pendingConnectionCanBeCanceledWithoutATransportCallback() async {
+        let model = makeModel()
+        model.connect(to: camera, code: PairingCode("4821")!)
+        model.disconnect()
+        #expect(model.connection == .browsing)
+        transport.emit(.connecting(camera))
+        transport.emit(.connected(camera))
+        try? await Task.sleep(for: .milliseconds(20))
+        #expect(model.connection == .browsing)
+        model.stop()
+    }
+
+    @Test func failedSaveRetainsTheReceivedFileForPermissionRecovery() async throws {
+        let model = await connectedModel()
+        store.fail(with: CameraDeviceError.permissionDenied("photo library"))
+        let id = UUID()
+        let name = TransferName.make(id: id, ext: "jpg")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        try Data("photo".utf8).write(to: url)
+        transport.emit(.fileReceived(name: name, url: url, from: camera))
+        #expect(await waitUntil { model.unsavedCaptureCount == 1 })
+        #expect(FileManager.default.fileExists(atPath: url.path))
+        model.suspend()
+        store.fail(with: nil)
+        model.resume()
+        await model.retrySavingCaptures()
+        #expect(model.unsavedCaptureCount == 0)
+        #expect(store.photos == [Data("photo".utf8)])
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        model.stop()
+    }
+
+    @Test func captureWithCopiesDisabledDoesNotClaimToBeSaved() async throws {
+        let model = await connectedModel()
+        let result = CaptureResult(kind: .photo, byteCount: 10, willSendFile: false, savedOnCamera: false)
+        transport.emit(.message(try encodedEvent(.captureFinished(result)), from: camera))
+        #expect(await waitUntil { model.captures.count == 1 })
+        #expect(model.notice == "Photo captured. No copy saved in the camera's Photos.")
+    }
+
+    @Test func disconnectedCapturesCannotStartAStaleDownload() async throws {
+        let model = await connectedModel()
+        let result = CaptureResult(kind: .photo, byteCount: 10, willSendFile: false, fileAvailable: true)
+        transport.emit(.message(try encodedEvent(.captureFinished(result)), from: camera))
+        #expect(await waitUntil { model.captures.count == 1 })
+        model.disconnect()
+        #expect(!model.canDownloadFullFile(result))
+        #expect(model.captures.first?.fileAvailable == false)
+        model.stop()
+    }
+
+    @Test func unpairedFileIsNotSaved() async throws {
+        let model = makeModel()
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).jpg")
+        try Data("photo".utf8).write(to: url)
+        transport.emit(.fileReceived(name: "image.jpg", url: url, from: camera))
+        #expect(await waitUntil { !FileManager.default.fileExists(atPath: url.path) })
+        #expect(store.photos.isEmpty)
+        model.stop()
+    }
+
+    @Test func recordingCanBeStoppedWhileAFileIsArriving() async throws {
+        let model = await connectedModel()
+        transport.emit(.message(try encodedEvent(.state(CameraState(mode: .video, isRecording: true))), from: camera))
+        transport.emit(.fileReceiveStarted(name: TransferName.make(id: UUID(), ext: "jpg"), from: camera))
+        #expect(await waitUntil { model.cameraState?.isRecording == true && model.isReceivingFile })
+        model.shutter()
+        #expect(transport.sentCommands.last == .stopRecording)
+        model.stop()
+    }
+
 }

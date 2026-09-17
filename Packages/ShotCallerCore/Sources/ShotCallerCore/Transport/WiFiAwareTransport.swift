@@ -4,9 +4,6 @@ import Network
 import WiFiAware
 import os
 
-/// Transport-level frame carried over the Wi-Fi Aware data channel. App messages are opaque encoded
-/// envelopes; files travel as a begin/chunk/end sequence. JSON-coded, so base64 for the byte fields —
-/// fine over fast Wi-Fi Aware for a first version; a binary framer can replace it later.
 enum WAFrame: Codable, Sendable {
     case message(Data)
     case fileBegin(id: String, name: String, size: Int)
@@ -14,16 +11,12 @@ enum WAFrame: Codable, Sendable {
     case fileEnd(id: String)
 }
 
-/// Wi-Fi Aware implementation of `PeerTransport` (iOS 26+). Devices are paired at the system level,
-/// so there is no app-level code handshake here (`requiresAppLevelPairing == false`); a connection is
-/// treated as an established pairing.
-///
-/// This transport handles one peer at a time, matching the app's model. Peer discovery, connection,
-/// framed messaging and chunked file transfer run over the new Swift `Network` API with a
-/// `Coder<WAFrame, WAFrame, .json>` protocol on top of TCP.
+/// A system-paired Wi-Fi Aware link. Every connection is owned by a cancellable task. In particular,
+/// an accepted connection must remain inside the listener's run handler for its entire lifetime.
 @available(iOS 26.0, *)
 public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
     typealias AppProtocol = Coder<WAFrame, WAFrame, NetworkJSONCoder>
+    typealias Connection = NetworkConnection<AppProtocol>
 
     public let localPeer: Peer
     public let events: AsyncStream<TransportEvent>
@@ -33,29 +26,33 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
     private let serviceName: String
     private let lock = NSLock()
     private let log = Logger(subsystem: "com.richardnelson.opensourceselfiestick", category: "wifiaware")
-
     private var listenerTask: Task<Void, Never>?
     private var browserTask: Task<Void, Never>?
-    private var connection: NetworkConnection<AppProtocol>?
-    private var connectedPeer: Peer?
+    private var connectionTask: Task<Void, Never>?
+    private var timeoutTask: Task<Void, Never>?
+    private var messageTask: Task<Void, Never>?
+    private var listenerID: UUID?
+    private var browserID: UUID?
+    private var advertisingRequested = false
+    private var browsingRequested = false
+    private var pairingSuspended = false
+    private var session = SinglePeerSession()
+    private var connection: Connection?
     private var endpointsByPeerID: [String: WAEndpoint] = [:]
-    private var incomingFiles: [String: (handle: FileHandle, url: URL, name: String, size: Int, received: Int)] = [:]
+    private var selectedEndpointsByPeerID: [String: WAEndpoint] = [:]
+    private var fileSend: (id: UUID, name: String, cancelled: Bool)?
+    private struct IncomingFile {
+        let handle: FileHandle
+        let url: URL
+        let name: String
+        let size: Int
+        var received = 0
+    }
+    private var incomingFiles: [String: IncomingFile] = [:]
     private let inboxDirectory: URL
 
-    /// Whether at least one device is paired for our service (pairing is done via DeviceDiscoveryUI).
-    private static var hasPairedDevice: Bool {
-        get async {
-            let devices = try? await WAPairedDevice.allDevices.current()
-            return (devices ?? [:]).isEmpty == false
-        }
-    }
-
-    /// Whether Wi-Fi Aware is usable on this device.
     public static var isSupported: Bool {
-        if #available(iOS 26.0, *) {
-            return WACapabilities.supportedFeatures.contains(.wifiAware)
-        }
-        return false
+        WACapabilities.supportedFeatures.contains(.wifiAware)
     }
 
     public init(displayName: String, serviceName: String = "_\(WireProtocol.serviceType)._udp") {
@@ -69,310 +66,464 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
     deinit {
         listenerTask?.cancel()
         browserTask?.cancel()
+        connectionTask?.cancel()
+        timeoutTask?.cancel()
+        messageTask?.cancel()
+        for file in incomingFiles.values {
+            try? file.handle.close()
+            try? FileManager.default.removeItem(at: file.url)
+        }
         continuation.finish()
     }
 
     public var connectedPeers: [Peer] {
-        lock.withLock { connectedPeer.map { [$0] } ?? [] }
+        lock.withLock { session.current.map { $0.isReady ? [$0.peer] : [] } ?? [] }
     }
 
-    // MARK: Publisher (camera)
+    // MARK: Pairing handoff
+
+    /// DeviceDiscoveryUI claims the same publish/subscribe service. Wait for our network tasks to
+    /// finish before mounting its controls, including when a person adds a second paired device.
+    public func suspendForPairing() async {
+        let tasks = lock.withLock { () -> [Task<Void, Never>] in
+            pairingSuspended = true
+            let tasks = [listenerTask, browserTask].compactMap { $0 }
+            listenerID = nil
+            browserID = nil
+            listenerTask = nil
+            browserTask = nil
+            tasks.forEach { $0.cancel() }
+            return tasks
+        }
+        clearDiscovered()
+        for task in tasks { await task.value }
+    }
+
+    /// Call only after the pairing controls disappear, so there is a single owner of the service.
+    public func resumeAfterPairing() {
+        let requested = lock.withLock { () -> (Bool, Bool) in
+            pairingSuspended = false
+            return (advertisingRequested, browsingRequested)
+        }
+        if requested.0 { startAdvertising(discoveryInfo: [:]) }
+        if requested.1 { startBrowserIfRequested() }
+    }
+
+    /// Preserve the actual selection from DevicePicker instead of hoping a later browse returns it.
+    public func registerPairedEndpoint(_ endpoint: WAEndpoint) -> Peer {
+        let peer = peer(for: endpoint)
+        lock.withLock {
+            endpointsByPeerID[peer.id] = endpoint
+            selectedEndpointsByPeerID[peer.id] = endpoint
+        }
+        continuation.yield(.peerFound(peer))
+        return peer
+    }
+
+    // MARK: Discovery
 
     public func startAdvertising(discoveryInfo: [String: String]) {
-        guard let service = WAPublishableService.allServices[serviceName] else {
-            continuation.yield(.failure("Wi-Fi Aware service “\(serviceName)” isn’t declared. Check WiFiAwareServices in Info.plist."))
+        guard Self.isSupported, let service = WAPublishableService.allServices[serviceName] else {
+            continuation.yield(.failure("Wi-Fi Aware isn’t available. Choose Automatic connection on both devices."))
             return
         }
-        guard listenerTask == nil else { return }
-        listenerTask = Task { [weak self] in
-            await self?.runListener(service: service)
+        lock.withLock {
+            advertisingRequested = true
+            guard !pairingSuspended, listenerTask == nil else { return }
+            let id = UUID()
+            listenerID = id
+            listenerTask = Task { [weak self] in await self?.runListener(service: service, id: id) }
         }
     }
 
     public func stopAdvertising() {
-        // While a connection is live, the listener task owns that connection's lifetime — the
-        // connection was created inside `listener.run`, so cancelling the task tears the live
-        // connection down with a cancel (NWError 89). A OneToOne listener won't hand us a second
-        // peer while the first is still being handled, so leave it running until the connection ends;
-        // `markDisconnected`/`disconnect` restart discovery when it does.
-        guard lock.withLock({ connection == nil }) else { return }
-        listenerTask?.cancel()
-        listenerTask = nil
+        lock.withLock {
+            advertisingRequested = false
+            // The listener owns accepted connections. Stopping discovery after .connected must not
+            // cancel the active remote. The session gate rejects all further incoming connections.
+            guard session.current == nil else { return }
+            listenerID = nil
+            listenerTask?.cancel()
+            listenerTask = nil
+        }
     }
 
-    private func runListener(service: WAPublishableService) async {
-        log.notice("wifi-aware listener starting for \(self.serviceName, privacy: .public)")
-        Trace.reset()
-        Trace.log("listener starting for \(serviceName)")
+    private func runListener(service: WAPublishableService, id: UUID) async {
         while !Task.isCancelled {
-            // Don't publish until a remote is paired — otherwise we collide with the DeviceDiscoveryUI
-            // pairing view, which publishes the same service (NWError -11999).
-            guard await Self.hasPairedDevice else {
-                Trace.log("listener: no paired device yet, waiting")
-                try? await Task.sleep(for: .seconds(2))
-                continue
-            }
             do {
-                Trace.log("listener: paired — creating NetworkListener")
+                guard try await hasPairedDevice() else {
+                    try await Task.sleep(for: .seconds(1))
+                    continue
+                }
                 let listener = try NetworkListener(
                     for: .wifiAware(.connecting(to: service, from: .allPairedDevices))
-                ) {
-                    Coder(WAFrame.self, using: .json) { TCP() }
-                }
-                Trace.log("listener: running, awaiting connections")
+                ) { Coder(WAFrame.self, using: .json) { TCP() } }
+                Trace.log("Wi-Fi Aware listener starting")
                 try await listener.run { [weak self] connection in
-                    await self?.adopt(connection: connection, peer: nil)
+                    guard let self, !Task.isCancelled else { return }
+                    let peer = Peer(id: connection.id, displayName: "Remote")
+                    let sessionID = UUID()
+                    let accepted = self.lock.withLock {
+                        self.listenerID == id && !self.pairingSuspended &&
+                        self.session.begin(id: sessionID, peer: peer)
+                    }
+                    guard accepted else { return }
+                    await self.receive(connection: connection, sessionID: sessionID, timeout: 30)
                 }
             } catch {
-                guard !Task.isCancelled else { return }
-                log.error("wifi-aware publisher error: \(error.localizedDescription, privacy: .public)")
-                Trace.log("listener ERROR: \(error.localizedDescription)")
-                try? await Task.sleep(for: .seconds(3))
+                guard !Task.isCancelled, lock.withLock({ listenerID == id }) else { return }
+                reportDiscoveryError(error)
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
             }
         }
     }
 
-    // MARK: Browser (remote)
-
     public func startBrowsing() {
-        guard let service = WASubscribableService.allServices[serviceName] else {
-            continuation.yield(.failure("Wi-Fi Aware service “\(serviceName)” isn’t declared. Check WiFiAwareServices in Info.plist."))
+        lock.withLock { browsingRequested = true }
+        startBrowserIfRequested()
+    }
+
+    private func startBrowserIfRequested() {
+        guard Self.isSupported, let service = WASubscribableService.allServices[serviceName] else {
+            continuation.yield(.failure("Wi-Fi Aware isn’t available. Choose Automatic connection on both devices."))
             return
         }
-        guard browserTask == nil else { return }
-        browserTask = Task { [weak self] in
-            await self?.runBrowser(service: service)
+        lock.withLock {
+            guard browsingRequested, !pairingSuspended, browserTask == nil else { return }
+            let id = UUID()
+            browserID = id
+            browserTask = Task { [weak self] in await self?.runBrowser(service: service, id: id) }
         }
     }
 
     public func stopBrowsing() {
-        browserTask?.cancel()
-        browserTask = nil
+        lock.withLock {
+            browsingRequested = false
+            browserID = nil
+            browserTask?.cancel()
+            browserTask = nil
+        }
+        clearDiscovered()
     }
 
-    private func runBrowser(service: WASubscribableService) async {
-        log.notice("wifi-aware browser starting for \(self.serviceName, privacy: .public)")
-        Trace.reset()
-        Trace.log("browser starting for \(serviceName)")
+    private func runBrowser(service: WASubscribableService, id: UUID) async {
         while !Task.isCancelled {
-            // Don't browse until a camera is paired — the DeviceDiscoveryUI picker handles pairing.
-            guard await Self.hasPairedDevice else {
-                Trace.log("browser: no paired device yet, waiting")
-                try? await Task.sleep(for: .seconds(2))
-                continue
-            }
             do {
-                Trace.log("browser: paired — creating NetworkBrowser")
-                let browser = NetworkBrowser(
-                    for: .wifiAware(.connecting(to: .allPairedDevices, from: service))
-                )
+                guard try await hasPairedDevice() else {
+                    try await Task.sleep(for: .seconds(1))
+                    continue
+                }
+                let browser = NetworkBrowser(for: .wifiAware(.connecting(to: .allPairedDevices, from: service)))
                 try await browser.run { [weak self] endpoints in
-                    self?.updateDiscovered(endpoints)
+                    self?.updateDiscovered(endpoints, browserID: id)
                 }
             } catch {
-                guard !Task.isCancelled else { return }
-                log.error("wifi-aware browser error: \(error.localizedDescription, privacy: .public)")
-                Trace.log("browser ERROR: \(error.localizedDescription)")
-                try? await Task.sleep(for: .seconds(3))
+                guard !Task.isCancelled, lock.withLock({ browserID == id }) else { return }
+                clearDiscovered()
+                reportDiscoveryError(error)
+                do { try await Task.sleep(for: .seconds(3)) } catch { return }
             }
         }
     }
 
-    private func updateDiscovered(_ endpoints: [WAEndpoint]) {
-        var found: [Peer] = []
+    private func hasPairedDevice() async throws -> Bool {
+        try await WAPairedDevice.allDevices.current()?.isEmpty == false
+    }
+
+    private func reportDiscoveryError(_ error: Error) {
+        log.error("Wi-Fi Aware discovery: \(error.localizedDescription, privacy: .public)")
+        Trace.log("Wi-Fi Aware discovery error: \(error.localizedDescription)")
+        continuation.yield(.failure("Wi-Fi Aware couldn’t find the other device. Keep both apps open and Wi-Fi on, or choose Automatic connection."))
+    }
+
+    private func updateDiscovered(_ endpoints: [WAEndpoint], browserID id: UUID) {
         lock.withLock {
+            guard browserID == id, !pairingSuspended else { return }
             let live = Set(endpoints.map { String($0.device.id) })
-            let gone = endpointsByPeerID.keys.filter { !live.contains($0) }
-            for id in gone { endpointsByPeerID[id] = nil }
+            for peerID in Array(endpointsByPeerID.keys) where !live.contains(peerID) {
+                if let endpoint = endpointsByPeerID.removeValue(forKey: peerID) {
+                    continuation.yield(.peerLost(peer(for: endpoint)))
+                }
+            }
             for endpoint in endpoints {
-                let id = String(endpoint.device.id)
-                if endpointsByPeerID[id] == nil { found.append(peer(for: endpoint)) }
-                endpointsByPeerID[id] = endpoint
+                let peer = peer(for: endpoint)
+                if endpointsByPeerID[peer.id] == nil { continuation.yield(.peerFound(peer)) }
+                endpointsByPeerID[peer.id] = endpoint
             }
         }
-        if !found.isEmpty { Trace.log("browser discovered \(found.count) new (endpoints=\(endpoints.count))") }
-        for peer in found { continuation.yield(.peerFound(peer)) }
     }
 
-    // MARK: Connecting (remote → camera)
+    private func clearDiscovered() {
+        lock.withLock {
+            for endpoint in endpointsByPeerID.values { continuation.yield(.peerLost(peer(for: endpoint))) }
+            endpointsByPeerID.removeAll()
+            selectedEndpointsByPeerID.removeAll()
+        }
+    }
+
+    // MARK: Connection ownership
 
     public func invite(_ peer: Peer, context: Data?, timeout: TimeInterval) {
-        guard let endpoint = lock.withLock({ endpointsByPeerID[peer.id] }) else {
-            Trace.log("invite: no endpoint for \(peer.displayName)")
-            continuation.yield(.failure("That camera is no longer in range."))
-            return
-        }
-        Trace.log("invite: connecting to \(peer.displayName)")
-        continuation.yield(.connecting(peer))
-        let connection = NetworkConnection(to: endpoint) {
-            Coder(WAFrame.self, using: .json) { TCP() }
-        }
-        Task { [weak self] in
-            await self?.adopt(connection: connection, peer: peer)
+        lock.withLock {
+            guard !pairingSuspended,
+                  let endpoint = selectedEndpointsByPeerID.removeValue(forKey: peer.id) ?? endpointsByPeerID[peer.id] else {
+                // Models wait for .disconnected to leave their connecting state.
+                continuation.yield(.disconnected(peer))
+                continuation.yield(.failure("That camera is no longer available. Keep Camera open on it and try again."))
+                return
+            }
+            let id = UUID()
+            guard session.begin(id: id, peer: peer) else { return }
+            continuation.yield(.connecting(peer))
+            let previousBrowser = browserTask
+            browserID = nil
+            browserTask = nil
+            previousBrowser?.cancel()
+            for discovered in endpointsByPeerID.values { continuation.yield(.peerLost(self.peer(for: discovered))) }
+            endpointsByPeerID.removeAll()
+            selectedEndpointsByPeerID.removeAll()
+            connectionTask = Task { [weak self] in
+                // The browser and the selected connection must not both subscribe to the service.
+                await previousBrowser?.value
+                guard let self, !Task.isCancelled,
+                      self.lock.withLock({ self.session.current?.id == id }) else { return }
+                // Construct within the task we own: cancelling this task closes the connection.
+                let connection = NetworkConnection(to: endpoint) { Coder(WAFrame.self, using: .json) { TCP() } }
+                await self.receive(connection: connection, sessionID: id, timeout: max(1, timeout))
+            }
         }
     }
 
-    // MARK: Connection lifecycle
-
-    private func adopt(connection: NetworkConnection<AppProtocol>, peer knownPeer: Peer?) async {
-        let peer = knownPeer ?? Peer(id: connection.id, displayName: "Camera remote")
-        lock.withLock {
+    private func receive(connection: Connection, sessionID id: UUID, timeout: TimeInterval) async {
+        let accepted = lock.withLock { () -> Bool in
+            guard session.current?.id == id, !Task.isCancelled else { return false }
             self.connection = connection
-            self.connectedPeer = peer
-        }
-        Trace.log("adopting \(knownPeer == nil ? "incoming" : "outgoing") connection \(connection.id)")
-        log.notice("adopting \(knownPeer == nil ? "incoming" : "outgoing", privacy: .public) connection \(connection.id, privacy: .public)")
-        connection.onStateUpdate { [weak self] conn, state in
-            guard let self else { return }
-            let name: String
-            switch state {
-            case .setup: name = "setup"
-            case .preparing: name = "preparing"
-            case .waiting(let error): name = "waiting(\(error.localizedDescription))"
-            case .ready: name = "ready"
-            case .failed(let error): name = "failed(\(error.localizedDescription))"
-            case .cancelled: name = "cancelled"
-            @unknown default: name = "unknown"
+            timeoutTask = Task { [weak self] in
+                do { try await Task.sleep(for: .seconds(timeout)) } catch { return }
+                self?.connectionTimedOut(id: id)
             }
-            Trace.log("connection \(conn.id) -> \(name)")
-            self.log.notice("connection \(conn.id, privacy: .public) -> \(name, privacy: .public)")
+            return true
+        }
+        guard accepted else { return }
+        connection.onStateUpdate { [weak self] _, state in
+            guard let self else { return }
+            Trace.log("Wi-Fi Aware connection \(id): \(String(describing: state))")
             switch state {
             case .ready:
-                self.continuation.yield(.connected(peer))
-            case .failed, .cancelled:
-                self.markDisconnected(peer)
+                self.lock.withLock {
+                    guard let peer = self.session.ready(id: id) else { return }
+                    self.timeoutTask?.cancel()
+                    self.timeoutTask = nil
+                    self.continuation.yield(.connected(peer))
+                    self.continuation.yield(.fileChannelFast(true))
+                }
+            case .failed(let error):
+                self.finishSession(id: id, error: error.localizedDescription)
+            case .cancelled:
+                self.finishSession(id: id)
             default:
                 break
             }
         }
+        defer { finishSession(id: id) }
         do {
             for try await message in connection.messages {
-                handle(frame: message.content, from: peer)
+                guard !Task.isCancelled else { break }
+                lock.withLock {
+                    guard session.current?.id == id, let peer = session.current?.peer else { return }
+                    handle(frame: message.content, from: peer)
+                }
             }
-            Trace.log("connection \(connection.id) messages ended")
-            log.notice("connection \(connection.id, privacy: .public) messages ended")
-            markDisconnected(peer)
         } catch {
-            Trace.log("connection \(connection.id) receive ERROR: \(error.localizedDescription)")
-            log.error("connection \(connection.id, privacy: .public) receive error: \(error.localizedDescription, privacy: .public)")
-            markDisconnected(peer)
+            if !Task.isCancelled { finishSession(id: id, error: error.localizedDescription) }
         }
     }
+
+    private func connectionTimedOut(id: UUID) {
+        let waiting = lock.withLock { session.current?.id == id && session.current?.isReady == false }
+        guard waiting else { return }
+        finishSession(id: id, error: "Connection timed out. Keep both apps open, turn on Wi-Fi, and try again.")
+    }
+
+    private func finishSession(id: UUID, error: String? = nil) {
+        let shouldResumeBrowsing = lock.withLock { () -> Bool in
+            let wasReady = session.current?.isReady == true
+            guard let peer = session.finish(id: id) else { return false }
+            connection = nil
+            timeoutTask?.cancel()
+            timeoutTask = nil
+            connectionTask?.cancel()
+            connectionTask = nil
+            // Cancelling the listener also closes its accepted connection, and releases its service
+            // before CameraHostModel starts advertising again after the disconnected event.
+            listenerID = nil
+            listenerTask?.cancel()
+            listenerTask = nil
+            messageTask?.cancel()
+            messageTask = nil
+            if let fileSend {
+                continuation.yield(.fileSendFinished(name: fileSend.name, error: "The connection ended before the file finished."))
+            }
+            fileSend = nil
+            discardIncomingFiles(error: "The connection ended before the file finished.")
+            continuation.yield(.disconnected(peer))
+            if let error {
+                Trace.log("Wi-Fi Aware session ended: \(error)")
+                continuation.yield(.failure(wasReady
+                    ? "The Wi-Fi Aware connection was interrupted. Keep both apps open and Wi-Fi on to reconnect."
+                    : "Couldn’t connect. On the camera, finish the system prompt and tap Done pairing, then try again with Wi-Fi on."))
+            }
+            return browsingRequested && !pairingSuspended
+        }
+        if shouldResumeBrowsing { startBrowserIfRequested() }
+    }
+
+    public func disconnect() {
+        let id = lock.withLock { session.current?.id }
+        if let id { finishSession(id: id) }
+    }
+
+    // MARK: Sending
+
+    public func send(_ data: Data, to peers: [Peer]) throws {
+        try lock.withLock {
+            guard let connection, let current = session.current, current.isReady,
+                  peers.contains(where: { $0.id == current.peer.id }) else { throw TransportError.notConnected }
+            // Preserve ordering of hello/state and command messages even though PeerTransport.send
+            // is synchronous. Each task waits for the previous send before touching the connection.
+            let previous = messageTask
+            messageTask = Task { [weak self] in
+                await previous?.value
+                guard !Task.isCancelled else { return }
+                do { try await connection.send(.message(data)) }
+                catch { self?.finishSession(id: current.id, error: error.localizedDescription) }
+            }
+        }
+    }
+
+    public func sendFile(at url: URL, named name: String, to peer: Peer) {
+        lock.withLock {
+            guard let connection, let current = session.current, current.isReady, current.peer.id == peer.id else {
+                continuation.yield(.fileSendFinished(name: name, error: "Not connected"))
+                return
+            }
+            guard fileSend == nil else {
+                continuation.yield(.fileSendFinished(name: name, error: "Another file is still sending."))
+                return
+            }
+            let id = UUID()
+            fileSend = (id, name, false)
+            let previousMessage = messageTask
+            Task { [weak self] in
+                // Capture metadata must reach the remote before its file can finish and be saved.
+                await previousMessage?.value
+                guard let self else { return }
+                let active = self.lock.withLock {
+                    self.session.current?.id == current.id && self.fileSend?.id == id
+                }
+                guard active else { return }
+                await self.streamFile(at: url, named: name, id: id, sessionID: current.id, over: connection)
+            }
+        }
+    }
+
+    public func cancelFileSend() {
+        // Cooperate between chunks; cancelling a Network task could also close the control link.
+        lock.withLock { fileSend?.cancelled = true }
+    }
+
+    private func streamFile(at url: URL, named name: String, id: UUID, sessionID: UUID, over connection: Connection) async {
+        var began = false
+        do {
+            guard lock.withLock({ fileSend?.id == id && fileSend?.cancelled == false && session.current?.id == sessionID }) else {
+                throw CancellationError()
+            }
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            let size = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int ?? 0
+            try await connection.send(.fileBegin(id: id.uuidString, name: name, size: size))
+            began = true
+            var sent = 0
+            while true {
+                let active = lock.withLock { fileSend?.id == id && fileSend?.cancelled == false && session.current?.id == sessionID }
+                guard active else { throw CancellationError() }
+                guard let chunk = try handle.read(upToCount: 32 * 1024), !chunk.isEmpty else { break }
+                try await connection.send(.fileChunk(id: id.uuidString, data: chunk))
+                sent += chunk.count
+                continuation.yield(.fileSendProgress(name: name, fraction: size > 0 ? min(1, Double(sent) / Double(size)) : 1))
+            }
+            try await connection.send(.fileEnd(id: id.uuidString))
+            completeFileSend(id: id, name: name, error: nil)
+        } catch {
+            // Closing a partial transfer makes the receiver discard it without adding a new frame
+            // case that would break older Wi-Fi Aware builds. Length validation prevents saving it.
+            if began, lock.withLock({ session.current?.id == sessionID }) {
+                try? await connection.send(.fileEnd(id: id.uuidString))
+            }
+            completeFileSend(id: id, name: name, error: error is CancellationError ? "Transfer cancelled" : error.localizedDescription)
+        }
+    }
+
+    private func completeFileSend(id: UUID, name: String, error: String?) {
+        lock.withLock {
+            guard fileSend?.id == id else { return }
+            fileSend = nil
+            continuation.yield(.fileSendFinished(name: name, error: error))
+        }
+    }
+
+    // MARK: Receiving files (called under lock)
 
     private func handle(frame: WAFrame, from peer: Peer) {
         switch frame {
         case .message(let data):
             continuation.yield(.message(data, from: peer))
         case .fileBegin(let id, let name, let size):
-            beginReceivingFile(id: id, name: name, size: size, from: peer)
+            guard size >= 0, incomingFiles.isEmpty else {
+                continuation.yield(.fileReceiveFailed(name: name, error: "Invalid or overlapping file transfer."))
+                return
+            }
+            let safeName = URL(fileURLWithPath: name).lastPathComponent
+            let url = inboxDirectory.appendingPathComponent(UUID().uuidString + "-" + safeName)
+            guard FileManager.default.createFile(atPath: url.path, contents: nil),
+                  let handle = try? FileHandle(forWritingTo: url) else {
+                try? FileManager.default.removeItem(at: url)
+                continuation.yield(.fileReceiveFailed(name: name, error: "Couldn’t create the received file."))
+                return
+            }
+            incomingFiles[id] = IncomingFile(handle: handle, url: url, name: name, size: size)
+            continuation.yield(.fileReceiveStarted(name: name, from: peer))
         case .fileChunk(let id, let data):
-            appendFileChunk(id: id, data: data)
+            guard var file = incomingFiles[id] else { return }
+            do {
+                guard data.count <= file.size - file.received else { throw TransportError.sendFailed("The file exceeded its expected size.") }
+                try file.handle.write(contentsOf: data)
+                file.received += data.count
+                incomingFiles[id] = file
+                continuation.yield(.fileReceiveProgress(name: file.name, fraction: file.size > 0 ? Double(file.received) / Double(file.size) : 1))
+            } catch {
+                discardIncomingFiles(error: "Couldn’t receive the complete file. Try sending it again.")
+            }
         case .fileEnd(let id):
-            finishReceivingFile(id: id, from: peer)
-        }
-    }
-
-    // MARK: Sending
-
-    public func send(_ data: Data, to peers: [Peer]) throws {
-        guard let connection = lock.withLock({ self.connection }) else { throw TransportError.notConnected }
-        Task {
-            do { try await connection.send(.message(data)) }
-            catch {
-                Trace.log("send ERROR: \(error.localizedDescription)")
-                continuation.yield(.failure("Couldn’t send: \(error.localizedDescription)"))
+            guard let file = incomingFiles.removeValue(forKey: id) else { return }
+            do {
+                try file.handle.close()
+                guard file.received == file.size else { throw TransportError.sendFailed("Transfer cancelled before the file finished.") }
+                continuation.yield(.fileReceived(name: file.name, url: file.url, from: peer))
+            } catch {
+                try? FileManager.default.removeItem(at: file.url)
+                continuation.yield(.fileReceiveFailed(name: file.name, error: "Transfer cancelled before the file finished."))
             }
         }
     }
 
-    public func sendFile(at url: URL, named name: String, to peer: Peer) {
-        guard let connection = lock.withLock({ self.connection }) else {
-            continuation.yield(.fileSendFinished(name: name, error: "Not connected"))
-            return
-        }
-        Task { [weak self] in
-            await self?.streamFile(at: url, named: name, over: connection)
-        }
-    }
-
-    private func streamFile(at url: URL, named name: String, over connection: NetworkConnection<AppProtocol>) async {
-        let id = UUID().uuidString
-        let chunkSize = 32 * 1024
-        do {
-            let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
-            let handle = try FileHandle(forReadingFrom: url)
-            defer { try? handle.close() }
-            try await connection.send(.fileBegin(id: id, name: name, size: size))
-            var sent = 0
-            while true {
-                let chunk = try handle.read(upToCount: chunkSize) ?? Data()
-                if chunk.isEmpty { break }
-                try await connection.send(.fileChunk(id: id, data: chunk))
-                sent += chunk.count
-                continuation.yield(.fileSendProgress(name: name, fraction: size > 0 ? Double(sent) / Double(size) : 1))
-            }
-            try await connection.send(.fileEnd(id: id))
-            continuation.yield(.fileSendFinished(name: name, error: nil))
-        } catch {
-            continuation.yield(.fileSendFinished(name: name, error: error.localizedDescription))
-        }
-    }
-
-    // MARK: Receiving files
-
-    private func beginReceivingFile(id: String, name: String, size: Int, from peer: Peer) {
-        let safeName = name.replacingOccurrences(of: "/", with: "_")
-        let url = inboxDirectory.appendingPathComponent(UUID().uuidString + "-" + safeName)
-        FileManager.default.createFile(atPath: url.path, contents: nil)
-        guard let handle = try? FileHandle(forWritingTo: url) else {
-            continuation.yield(.fileReceiveFailed(name: name, error: "Couldn’t open a file to receive into."))
-            return
-        }
-        lock.withLock { incomingFiles[id] = (handle, url, name, size, 0) }
-        continuation.yield(.fileReceiveStarted(name: name, from: peer))
-    }
-
-    private func appendFileChunk(id: String, data: Data) {
-        let update: (name: String, fraction: Double)? = lock.withLock {
-            guard var file = incomingFiles[id] else { return nil }
-            try? file.handle.write(contentsOf: data)
-            file.received += data.count
-            incomingFiles[id] = file
-            return (file.name, file.size > 0 ? Double(file.received) / Double(file.size) : 0)
-        }
-        if let update { continuation.yield(.fileReceiveProgress(name: update.name, fraction: update.fraction)) }
-    }
-
-    private func finishReceivingFile(id: String, from peer: Peer) {
-        let file: (url: URL, name: String)? = lock.withLock {
-            guard let file = incomingFiles.removeValue(forKey: id) else { return nil }
+    private func discardIncomingFiles(error: String) {
+        for file in incomingFiles.values {
             try? file.handle.close()
-            return (file.url, file.name)
+            try? FileManager.default.removeItem(at: file.url)
+            continuation.yield(.fileReceiveFailed(name: file.name, error: error))
         }
-        if let file { continuation.yield(.fileReceived(name: file.name, url: file.url, from: peer)) }
-    }
-
-    // MARK: Teardown
-
-    public func disconnect() {
-        let peer = lock.withLock { () -> Peer? in
-            self.connection = nil
-            let peer = connectedPeer
-            connectedPeer = nil
-            return peer
-        }
-        if let peer { continuation.yield(.disconnected(peer)) }
-    }
-
-    private func markDisconnected(_ peer: Peer) {
-        Trace.log("markDisconnected \(peer.displayName)")
-        let shouldEmit = lock.withLock { () -> Bool in
-            guard connectedPeer?.id == peer.id else { return false }
-            connection = nil
-            connectedPeer = nil
-            return true
-        }
-        if shouldEmit { continuation.yield(.disconnected(peer)) }
+        incomingFiles.removeAll()
     }
 
     private func peer(for endpoint: WAEndpoint) -> Peer {

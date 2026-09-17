@@ -72,6 +72,7 @@ public final class BluetoothTransport: NSObject, PeerTransport, @unchecked Senda
     /// The file being streamed out right now, produced chunk by chunk so only ~one chunk is buffered.
     private struct FileSend { let data: Data; var offset: Int; let name: String; let startedAt: Date }
     private var fileSend: FileSend?
+    private var activeFileSendName: String?
 
     public init(displayName: String) {
         self.displayName = BluetoothTransport.trimmedName(displayName)
@@ -157,7 +158,7 @@ public final class BluetoothTransport: NSObject, PeerTransport, @unchecked Senda
             continuation.yield(.fileSendFinished(name: name, error: "Not connected."))
             return
         }
-        guard lock.withLock({ fileSend == nil }) else {
+        guard lock.withLock({ activeFileSendName == nil }) else {
             Trace.log("ble: sendFile ignored — a transfer is already in flight")
             return
         }
@@ -168,7 +169,10 @@ public final class BluetoothTransport: NSObject, PeerTransport, @unchecked Senda
         }
         let startedAt = Date()
         Trace.log("ble: sending file \(name) — \(data.count) bytes")
-        lock.withLock { fileSend = FileSend(data: data, offset: 0, name: name, startedAt: startedAt) }
+        lock.withLock {
+            fileSend = FileSend(data: data, offset: 0, name: name, startedAt: startedAt)
+            activeFileSendName = name
+        }
         handler.nextChunk = { [weak self] in self?.produceNextChunk() }
         // Report finished only once our buffer has fully flushed to the Bluetooth stack.
         handler.onDrained = { [weak self] in
@@ -176,7 +180,10 @@ public final class BluetoothTransport: NSObject, PeerTransport, @unchecked Senda
             let seconds = Date().timeIntervalSince(startedAt)
             let kbps = seconds > 0 ? Double(data.count) / 1024.0 / seconds : 0
             Trace.log("ble: file \(name) flushed \(data.count) bytes in \(Int(seconds * 1000)) ms (\(Int(kbps)) KB/s local)")
-            self.lock.withLock { self.streamHandler?.nextChunk = nil }
+            self.lock.withLock {
+                self.streamHandler?.nextChunk = nil
+                self.activeFileSendName = nil
+            }
             self.continuation.yield(.fileSendProgress(name: name, fraction: 1))
             self.continuation.yield(.fileSendFinished(name: name, error: nil))
         }
@@ -215,16 +222,19 @@ public final class BluetoothTransport: NSObject, PeerTransport, @unchecked Senda
     }
 
     public func cancelFileSend() {
-        let handler = lock.withLock { () -> L2CAPStreamHandler? in
-            fileSend = nil                 // stop producing further chunks
+        let (handler, name) = lock.withLock { () -> (L2CAPStreamHandler?, String?) in
+            let name = activeFileSendName
+            activeFileSendName = nil
+            fileSend = nil
             let handler = streamHandler
             handler?.nextChunk = nil
-            handler?.onDrained = nil       // don't report the aborted send as finished
-            return handler
+            handler?.onDrained = nil
+            return (handler, name)
         }
-        // The partial chunk already buffered completes on a frame boundary; then the receiver gets a
-        // clean cancel and discards its partial file. No mid-frame corruption.
+        guard let name else { return }
+        // Finish the buffered frame, then append cancel before any subsequent file's header.
         handler?.send(tagged(.fileCancel, Data()))
+        continuation.yield(.fileSendFinished(name: name, error: "Canceled"))
     }
 
     public func disconnect() {
@@ -325,6 +335,7 @@ public final class BluetoothTransport: NSObject, PeerTransport, @unchecked Senda
             streamHandler?.close()
             streamHandler = nil
             fileSend = nil
+            activeFileSendName = nil
             let peer = connectedPeer
             connectedPeer = nil
             connectingPeripheral = nil

@@ -1,8 +1,9 @@
 import SwiftUI
 
 struct RolePickerView: View {
-    let photoAccess: PhotoLibraryAccess
     let onSelect: (Role) -> Void
+    @State private var showPrivacy = false
+    @AppStorage(TransportFactory.wifiAwarePreferenceKey) private var useWiFiAware = false
 
     var body: some View {
         ScrollView {
@@ -11,17 +12,13 @@ struct RolePickerView: View {
                     AppMark()
                     Text("Shot Caller")
                         .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                    Text("Turn a second iPhone or iPad into a remote control for this one's camera.")
+                    Text("Two devices. Everyone in the shot.")
                         .font(.body)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 320)
                 }
                 .padding(.top, 24)
-
-                if photoAccess.isDenied {
-                    PhotoAccessWarning(access: photoAccess)
-                }
 
                 VStack(spacing: 14) {
                     RoleCard(
@@ -36,13 +33,40 @@ struct RolePickerView: View {
                     ) { onSelect(.remote) }
                 }
 
+                connectionOptions
                 HowItWorks()
+                Button { showPrivacy = true } label: {
+                    Label("Privacy & help", systemImage: "hand.raised")
+                        .frame(minHeight: 44)
+                }
             }
             .padding(24)
             .frame(maxWidth: 600)
             .frame(maxWidth: .infinity)
         }
         .background(Color(.systemGroupedBackground))
+        .sheet(isPresented: $showPrivacy) { PrivacyHelpView() }
+    }
+
+    private var connectionOptions: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Connection", systemImage: "link")
+                .font(.headline)
+            if TransportFactory.wifiAwareSupported {
+                Toggle("Wi-Fi Aware", isOn: $useWiFiAware)
+                Text(useWiFiAware
+                     ? "Choose Wi-Fi Aware on both devices, then follow Apple’s pairing prompt. Both devices need supported hardware and iOS 26 or later."
+                     : "Automatic: Bluetooth connects your devices. Wi-Fi speeds up transfers when available. No internet or account needed.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Automatic: Bluetooth connects your devices. Wi-Fi speeds up transfers when available. Wi-Fi Aware requires iOS 26 and compatible hardware on both devices.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(18)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
     }
 }
 
@@ -99,7 +123,7 @@ private struct HowItWorks: View {
     private let steps = [
         "Open Shot Caller on both devices.",
         "Choose Camera on one and Remote on the other.",
-        "Type the camera's 4-digit code on the remote. Then shoot.",
+        "Choose the camera on the remote, follow the pairing instructions, and take your shot.",
     ]
 
     var body: some View {
@@ -120,7 +144,7 @@ private struct HowItWorks: View {
                         .foregroundStyle(.primary)
                 }
             }
-            Text("Keep Wi-Fi on for both devices — the same Wi-Fi network is most reliable, and it also works with Wi-Fi on but no network joined. Photos come back to the remote in a few seconds; videos stay on the camera unless you ask for them.")
+            Text("Keep both apps open and the devices nearby. For the automatic connection, leave Bluetooth on. Leave Wi-Fi on for faster transfers; a shared Wi-Fi network can help. Videos stay on the camera unless you request copies.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .padding(.top, 4)
@@ -132,5 +156,5 @@ private struct HowItWorks: View {
 }
 
 #Preview {
-    RolePickerView(photoAccess: PhotoLibraryAccess()) { _ in }
+    RolePickerView { _ in }
 }

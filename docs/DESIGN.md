@@ -63,11 +63,11 @@ The brand blue carries over from the 2016 wordmark (a royal blue) so the App Sto
 
 **Remote — discovery.** A spinner and the instruction while nothing is found; then a list of cameras by name. Tapping one opens the code sheet: four boxes, number pad up immediately, auto-submits on the fourth digit.
 
-**Remote — control deck.** From the top: camera name pill, a **channel pill** ("Bluetooth" or "Wi-Fi") showing how files travel, and settings; a stage that shows the countdown, the recording clock, or the last capture (300 pt) with a session count; the transfer banner (live progress) when a file is moving; flash · timer · flip; the mode switch; the 124 pt shutter (dimmed and paused while a download runs). When a capture is held on the camera (Bluetooth only), a green **Download full photo/video** button appears under the thumbnail; tapping it warns with the size and estimated seconds over Bluetooth and offers Full / Reduced / Small, then shows progress with a red **Cancel**. Over Wi-Fi the full file just arrives, no button.
+**Remote — control deck.** From the top: camera name pill, a **channel pill** ("Bluetooth" or "Wi-Fi") showing how files travel, and settings; a stage that shows the countdown, the recording clock, or a size-adaptive preview of the last capture with a session count and explicit saved status; the transfer banner (live progress) when a file is moving; flash · timer · flip; the mode switch; the large shutter (dimmed and paused while a download runs). When a capture is held on the camera (Bluetooth only), a green **Download full photo/video** button appears under the thumbnail; tapping it warns with the size and estimated seconds over Bluetooth and offers Full / Reduced / Small, then shows progress with a red **Cancel**. Over Wi-Fi the full file just arrives, no button.
 
 **Deferred delivery.** Delivery is decoupled from intent (see `docs/TRANSPORT.md`): the thumbnail is instant, full files come fast over Wi-Fi automatically, and over Bluetooth they're offered as a download and flush automatically when Wi-Fi returns — the UI adapts rather than making the user pick a mode.
 
-**Settings sheets.** Camera: keep copies in Photos, issue a new code, nickname. Remote: send photos / send videos (with the honest note about Bluetooth), countdown length, nickname. Medium detents — they're quick toggles, not destinations.
+**Settings sheets.** Camera: keep copies in Photos, issue a new code, nickname. Remote: send photos / send videos (with the honest note about Bluetooth), countdown length, nickname. Medium and large detents keep the settings readable at larger text sizes. Connection selection lives on the home screen before starting a role, so both devices can choose the same method.
 
 ## Icon
 
@@ -79,7 +79,12 @@ Every control has a label. The shutter's label changes with its meaning ("Take p
 
 ## Open questions
 
-- Final name (see above).
-- iPad: layouts work but nothing is tailored; the remote deck would suit a two-column layout in landscape.
+- Verify the adaptive two-column remote and compact camera layouts on physical iPads and large-text settings.
 - Live preview on the remote: needs a frame stream (`MCSession.startStream`) or a different transport; explicitly out of scope for 2.0.
 - Manual controls (ISO, white balance) from the 2016 app: planned as sliders on the camera screen, not yet built.
+
+## Release-readiness UX pass (September 2026)
+
+First-use setup explains permissions after a role is selected. Saving copies is optional and remembered; Remote does not ask for Camera or Microphone. The home screen exposes connection selection and offline Privacy & Help. Wi-Fi Aware preserves the system picker's selected camera and offers pairing again even when an older device is remembered. If the camera's pairing panel remains open after confirmation, **Done pairing** releases it so the remote can connect.
+
+Capture thumbnails open an in-app preview with explicit original-save status; the app does not use an undocumented Photos URL scheme. Failed saves retain originals for retry during the session. Closing with unsaved originals warns before discarding them. Camera recording is finalized on background/close, and stopping a recording remains possible during file transfers. Visual/VoiceOver verification on real devices remains part of release acceptance.

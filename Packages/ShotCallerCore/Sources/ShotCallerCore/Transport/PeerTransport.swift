@@ -73,7 +73,7 @@ public protocol PeerTransport: AnyObject, Sendable {
     func invite(_ peer: Peer, context: Data?, timeout: TimeInterval)
     func send(_ data: Data, to peers: [Peer]) throws
     func sendFile(at url: URL, named name: String, to peer: Peer)
-    /// Abort the file send currently in flight, if any (used when the user cancels a slow download).
+    /// Abort the active file send. Emit fileSendFinished when its send slot is free, including on cancel.
     func cancelFileSend()
     func disconnect()
 }

@@ -34,6 +34,12 @@ public final class RemoteModel {
     public private(set) var transfer: TransferStatus?
     /// A short, transient message for the person holding the remote.
     public private(set) var notice: String?
+    public var unsavedCaptureCount: Int { unsavedFiles.count }
+    private struct UnsavedFile { let name: String; let url: URL; let captureID: UUID? }
+    private var unsavedFiles: [URL: UnsavedFile] = [:]
+    @ObservationIgnored private var savingFiles: Set<URL> = []
+    @ObservationIgnored private var isStopped = false
+    @ObservationIgnored private var connectionTimeoutTask: Task<Void, Never>?
     /// The current file-transfer channel while connected: false = Bluetooth only, true = Bluetooth + a
     /// fast Wi-Fi lane. nil when the transport is single-channel (Wi-Fi Aware) or not connected.
     public private(set) var fileChannelFast: Bool?
@@ -78,29 +84,50 @@ public final class RemoteModel {
 
     public func start() {
         guard eventTask == nil else { return }
+        isStopped = false
         connection = .browsing
         transport.startBrowsing()
         eventTask = Task { [weak self, transport] in
             for await event in transport.events {
-                guard let self else { return }
+                guard let self, !Task.isCancelled else { return }
                 self.handle(event)
             }
         }
     }
 
-    public func stop() {
-        eventTask?.cancel()
-        eventTask = nil
+    public func suspend() {
+        disconnect()
         transport.stopBrowsing()
-        transport.disconnect()
-        pendingCode = nil
-        reconnectName = nil
-        reconnectAttemptsLeft = 0
-        isReconnecting = false
         connection = .idle
         cameras = []
-        camera = nil
-        cameraState = nil
+    }
+
+    public func resume() {
+        guard connection == .idle else { return }
+        if eventTask == nil {
+            start()
+        } else {
+            connection = .browsing
+            transport.startBrowsing()
+        }
+    }
+
+    public func stop() {
+        isStopped = true
+        suspend()
+        eventTask?.cancel()
+        eventTask = nil
+        noticeTask?.cancel()
+        for file in unsavedFiles.values where !savingFiles.contains(file.url) {
+            try? FileManager.default.removeItem(at: file.url)
+        }
+        unsavedFiles.removeAll()
+    }
+
+    public func retrySavingCaptures() async {
+        for file in unsavedFiles.values {
+            await save(name: file.name, from: file.url, captureID: file.captureID)
+        }
     }
 
     // MARK: Connecting
@@ -117,6 +144,15 @@ public final class RemoteModel {
         pendingCode = code
         didReceiveChallenge = false
         connection = .connecting(peer)
+        connectionTimeoutTask?.cancel()
+        connectionTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(30))
+            guard let self, !Task.isCancelled, self.connection == .connecting(peer) else { return }
+            self.disconnect()
+            self.show(self.requiresCode
+                ? "Couldn't connect. Keep both devices nearby with Bluetooth on, then try again."
+                : "Couldn't connect. Keep Wi-Fi on and Shot Caller open on both devices, then try again.")
+        }
         // The code is proved over the data channel once connected; no secret in the invitation, and a
         // longer timeout because peer-to-peer Wi-Fi can be slow to establish.
         transport.invite(peer, context: nil, timeout: 30)
@@ -138,8 +174,31 @@ public final class RemoteModel {
     }
 
     public func disconnect() {
-        expectsDisconnect = true
+        connectionTimeoutTask?.cancel()
+        connectionTimeoutTask = nil
+        endDownloadWatchdog()
+        pendingCode = nil
+        reconnectName = nil
+        reconnectAttemptsLeft = 0
+        isReconnecting = false
+        didReceiveChallenge = false
+        camera = nil
+        cameraState = nil
+        fileChannelFast = nil
+        downloadingCaptureID = nil
+        transfer = nil
+        invalidateAvailableFiles()
+        // Some transports emit no disconnected event while an invitation is still pending.
+        // Reset locally before canceling, so the old callback cannot restore a stale connection.
+        connection = .browsing
         transport.disconnect()
+    }
+
+    private func invalidateAvailableFiles() {
+        for index in captures.indices {
+            captures[index].fileAvailable = false
+            captures[index].willSendFile = false
+        }
     }
 
     /// Nudge discovery, e.g. right after a Wi-Fi Aware pairing completes.
@@ -159,12 +218,12 @@ public final class RemoteModel {
         }
         switch state.mode {
         case .photo:
-            guard !state.isBusy else { return }
+            guard !state.isBusy, !isReceivingFile else { return }
             send(.capturePhoto(sendBack: sendBackPhotos, delay: timerSeconds))
         case .video:
             if state.isRecording {
                 send(.stopRecording)
-            } else if !state.isBusy {
+            } else if !state.isBusy, !isReceivingFile {
                 send(.startRecording(sendBack: sendBackVideos, delay: timerSeconds))
             }
         }
@@ -200,11 +259,11 @@ public final class RemoteModel {
     /// automatically if a Wi-Fi lane appears.
     public func canDownloadFullFile(_ capture: CaptureResult) -> Bool {
         // One download at a time — starting another would clobber the in-flight Bluetooth transfer.
-        downloadingCaptureID == nil && capture.fileAvailable && !isDownloaded(capture)
+        connection.isConnected && !isReceivingFile && capture.fileAvailable && !isDownloaded(capture)
     }
 
     /// Whether a file is transferring right now (used to keep the UI from starting an overlapping one).
-    public var isReceivingFile: Bool { downloadingCaptureID != nil }
+    public var isReceivingFile: Bool { downloadingCaptureID != nil || !savingFiles.isEmpty }
 
     public func isDownloading(_ capture: CaptureResult) -> Bool { downloadingCaptureID == capture.id }
     public func isDownloaded(_ capture: CaptureResult) -> Bool { downloadedCaptureIDs.contains(capture.id) }
@@ -286,13 +345,16 @@ public final class RemoteModel {
         case .invitation(_, _, let respond):
             // A remote never accepts invitations; only cameras do.
             respond(false)
-        case .connecting(let peer):
-            if case .browsing = connection { connection = .connecting(peer) }
+        case .connecting:
+            // invite already records the expected peer; late callbacks cannot revive a canceled attempt.
+            break
         case .connected(let peer):
-            // Stay "connecting" until the camera challenges us and accepts our code.
-            connection = .connecting(peer)
+            // Wait for hello, and ignore late or duplicate callbacks from a canceled invitation.
+            guard case .connecting(let expected) = connection, expected.id == peer.id else { return }
         case .disconnected(let peer):
             guard connection.peer?.id == peer.id else { return }
+            connectionTimeoutTask?.cancel()
+            connectionTimeoutTask = nil
             let wasPaired = connection.isConnected
             let reachedCamera = didReceiveChallenge
             let connectionPeerBeforeDrop = connection.peer
@@ -302,6 +364,8 @@ public final class RemoteModel {
             didReceiveChallenge = false
             fileChannelFast = nil
             downloadingCaptureID = nil
+            transfer = nil
+            invalidateAvailableFiles()
             endDownloadWatchdog()
             if expectsDisconnect {
                 expectsDisconnect = false
@@ -322,12 +386,15 @@ public final class RemoteModel {
                 show("The camera didn't accept the code. Check it and try again.")
             } else {
                 // The session never established — the Bluetooth link couldn't form.
-                show("Couldn't connect to the camera. Make sure Bluetooth is on and the devices are close.")
+                show(requiresCode
+                    ? "Couldn't connect to the camera. Make sure Bluetooth is on and the devices are close."
+                    : "Couldn't connect to the camera. Keep Wi-Fi on and Shot Caller open on both devices.")
             }
         case .message(let data, let peer):
             guard connection.peer?.id == peer.id else { return }
             handleMessage(data)
-        case .fileReceiveStarted(let name, _):
+        case .fileReceiveStarted(let name, let peer):
+            guard connection.isConnected, connection.peer?.id == peer.id else { return }
             let id = TransferName.parse(name)?.id
             downloadingCaptureID = id
             transfer = TransferStatus(name: name, fraction: 0, phase: .receiving)
@@ -335,7 +402,11 @@ public final class RemoteModel {
         case .fileReceiveProgress(let name, let fraction):
             if transfer?.name == name { transfer?.fraction = fraction }
             if let id = TransferName.parse(name)?.id, id == downloadingCaptureID { armDownloadWatchdog(for: id) }
-        case .fileReceived(let name, let url, _):
+        case .fileReceived(let name, let url, let peer):
+            guard connection.isConnected, connection.peer?.id == peer.id else {
+                try? FileManager.default.removeItem(at: url)
+                return
+            }
             endDownloadWatchdog()
             let id = TransferName.parse(name)?.id
             Task { await save(name: name, from: url, captureID: id) }
@@ -378,6 +449,8 @@ public final class RemoteModel {
                 show("Couldn't reach the camera.")
             }
         case .hello(let info):
+            connectionTimeoutTask?.cancel()
+            connectionTimeoutTask = nil
             // The camera accepted our code.
             camera = info
             isReconnecting = false
@@ -399,7 +472,14 @@ public final class RemoteModel {
             } else {
                 captures.append(result)
                 if !result.willSendFile {
-                    show(result.kind == .photo ? "Photo saved on the camera." : "Video saved on the camera.")
+                    let kind = result.kind == .photo ? "Photo" : "Video"
+                    if result.savedOnCamera == true || (result.savedOnCamera == nil && cameraState?.keepsCopies != false) {
+                        show("\(kind) saved on the camera.")
+                    } else if result.fileAvailable {
+                        show("\(kind) ready to download. No copy saved in the camera's Photos.")
+                    } else {
+                        show("\(kind) captured. No copy saved in the camera's Photos.")
+                    }
                 }
             }
         case .captureFailed(let reason):
@@ -414,9 +494,11 @@ public final class RemoteModel {
     }
 
     private func save(name: String, from url: URL, captureID: UUID? = nil) async {
+        guard !savingFiles.contains(url), !isStopped else { return }
+        savingFiles.insert(url)
         transfer = TransferStatus(name: name, fraction: 1, phase: .saving)
         defer {
-            try? FileManager.default.removeItem(at: url)
+            savingFiles.remove(url)
             if downloadingCaptureID == captureID { downloadingCaptureID = nil }
         }
         do {
@@ -426,12 +508,20 @@ public final class RemoteModel {
             } else {
                 try await mediaStore.savePhoto(data: Data(contentsOf: url), fileExtension: fileExtension)
             }
+            try? FileManager.default.removeItem(at: url)
+            unsavedFiles[url] = nil
             if let captureID { downloadedCaptureIDs.insert(captureID) }
-            transfer = TransferStatus(name: name, fraction: 1, phase: .saved)
+            if !isStopped { transfer = TransferStatus(name: name, fraction: 1, phase: .saved) }
         } catch {
-            transfer = TransferStatus(name: name, fraction: 1, phase: .failed(error.localizedDescription))
+            guard !isStopped else {
+                try? FileManager.default.removeItem(at: url)
+                return
+            }
+            unsavedFiles[url] = UnsavedFile(name: name, url: url, captureID: captureID)
+            let reason = CameraHostModel.describe(error)
+            transfer = TransferStatus(name: name, fraction: 1, phase: .failed(reason))
             let kind = ["mov", "mp4", "m4v"].contains(url.pathExtension.lowercased()) ? "video" : "photo"
-            show("Couldn't save the \(kind) to this device. \(error.localizedDescription)")
+            show("Couldn't save the \(kind) to Photos. The file is kept here while this screen stays open. \(reason)")
         }
     }
 

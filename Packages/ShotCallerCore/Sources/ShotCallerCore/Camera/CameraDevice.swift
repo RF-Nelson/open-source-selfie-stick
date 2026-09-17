@@ -43,7 +43,12 @@ public enum CameraDeviceError: Error, Sendable, Equatable, LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .unavailable: "No camera is available on this device."
-        case .permissionDenied(let what): "Allow access to the \(what) in Settings to use this device as a camera."
+        case .permissionDenied(let what):
+            switch what {
+            case "photo library": "Allow Photos access in Settings to save captures on this device."
+            case "microphone": "Allow microphone access in Settings to record video with sound."
+            default: "Allow camera access in Settings to use this device as a camera."
+            }
         case .busy: "The camera is busy."
         case .notRecording: "Nothing is being recorded."
         case .failed(let reason): reason
@@ -63,6 +68,12 @@ public protocol CameraDevice: AnyObject, Sendable {
     /// Returns a movie file the caller owns.
     func stopRecording() async throws -> RecordedMovie
     func recordingDuration() async -> TimeInterval
+    /// An interruption or system limit stopped recording, and its completed file can be collected.
+    func recordingHasFinished() async -> Bool
+}
+
+public extension CameraDevice {
+    func recordingHasFinished() async -> Bool { false }
 }
 
 /// Produces the small JPEG previews that travel inside `CaptureResult`, and re-encodes photos smaller
@@ -111,7 +122,7 @@ public final class FakeCameraDevice: CameraDevice, @unchecked Sendable {
     public var photoCount: Int { lock.withLock { _photoCount } }
     public var isRecording: Bool { lock.withLock { _isRecording } }
 
-    public func failStart(with error: CameraDeviceError) { lock.withLock { _startError = error } }
+    public func failStart(with error: CameraDeviceError?) { lock.withLock { _startError = error } }
     public func failCapture(with error: CameraDeviceError?) { lock.withLock { _captureError = error } }
 
     public func start() async throws -> CameraCapabilities {

@@ -278,4 +278,111 @@ import Testing
         transport.simulateDisconnected(remote)
         #expect(await waitUntil { model.link == .none && transport.isAdvertising })
     }
+    @Test func localControlsWorkWithoutAPairedRemote() async {
+        let model = await makeModel()
+        model.perform(.capturePhoto(sendBack: false, delay: 0))
+        #expect(await waitUntil { model.captures.count == 1 })
+        #expect(store.photos.count == 1)
+        #expect(model.captures.first?.savedOnCamera == true)
+    }
+
+    @Test func cameraPermissionCanRecoverWithoutRecreatingTheModel() async {
+        device.failStart(with: .permissionDenied("camera"))
+        let model = await makeModel()
+        device.failStart(with: nil)
+        await model.retryCamera()
+        #expect(model.availability == .ready)
+        #expect(transport.isAdvertising)
+        model.perform(.capturePhoto(sendBack: false, delay: 0))
+        #expect(await waitUntil { model.captures.count == 1 })
+    }
+
+    @Test func deniedPhotosAccessStillDeliversAndCanRetryTheLocalSave() async throws {
+        let model = await connectedModel()
+        store.fail(with: CameraDeviceError.permissionDenied("photo library"))
+        try command(.capturePhoto(sendBack: true, delay: 0))
+        #expect(await waitUntil { model.captures.count == 1 && transport.sentFiles.count == 1 })
+        #expect(model.captures.first?.savedOnCamera == false)
+        #expect(model.unsavedCaptureCount == 1)
+        #expect(!transport.sentEvents.contains { if case .captureFailed = $0 { true } else { false } })
+        let url = try #require(transport.sentFiles.first?.url)
+        await model.suspend()
+        #expect(FileManager.default.fileExists(atPath: url.path))
+        store.fail(with: nil)
+        await model.resume()
+        await model.retrySavingCaptures()
+        #expect(model.unsavedCaptureCount == 0)
+        #expect(model.captures.first?.savedOnCamera == true)
+        #expect(store.photos.count == 1)
+        #expect(!FileManager.default.fileExists(atPath: url.path))
+        await model.stop()
+    }
+
+    @Test func leavingTheCameraFinishesAndSavesTheRecording() async {
+        let model = await makeModel()
+        model.perform(.setMode(.video))
+        #expect(await waitUntil { model.state.mode == .video })
+        model.perform(.startRecording(sendBack: false, delay: 0))
+        #expect(await waitUntil { model.state.isRecording })
+        await model.stop()
+        #expect(!model.state.isRecording)
+        #expect(model.captures.count == 1)
+        #expect(store.videos.count == 1)
+        #expect(!transport.isAdvertising)
+    }
+
+    @Test func backgroundingCancelsCountdownAndResumingKeepsDiscoveryWorking() async {
+        let model = await makeModel()
+        sleeper.passthrough = false
+        model.perform(.capturePhoto(sendBack: false, delay: 3))
+        #expect(await waitUntil { model.state.countdown == 3 })
+        await model.suspend()
+        #expect(model.state.countdown == nil)
+        #expect(device.photoCount == 0)
+        #expect(!transport.isAdvertising)
+        await model.resume()
+        let answers = Answers()
+        transport.emit(.invitation(from: remote, context: nil, respond: answers.record))
+        #expect(await waitUntil { answers.values == [true] })
+        await model.stop()
+    }
+
+    @Test func declinedCopiesAreReportedTruthfully() async {
+        let model = await makeModel()
+        model.keepsCopies = false
+        model.perform(.capturePhoto(sendBack: false, delay: 0))
+        #expect(await waitUntil { model.captures.count == 1 })
+        #expect(model.captures.first?.savedOnCamera == false)
+        #expect(store.photos.isEmpty)
+    }
+
+    @Test func systemCountdownCanBeCanceled() async {
+        let model = CameraHostModel(transport: transport, device: device, mediaStore: store, appVersion: "2.0")
+        await model.start()
+        model.perform(.capturePhoto(sendBack: false, delay: 3))
+        #expect(await waitUntil { model.state.countdown == 3 })
+        model.perform(.cancelCountdown)
+        #expect(await waitUntil { model.state.countdown == nil })
+        #expect(device.photoCount == 0)
+        await model.stop()
+    }
+
+    @Test func backgroundingRetainsTheOnlyCopyOfADeferredPhoto() async throws {
+        let model = await connectedModel()
+        model.keepsCopies = false
+        transport.emit(.fileChannelFast(false))
+        #expect(await waitUntil { model.fileChannelFast == false })
+        try command(.capturePhoto(sendBack: true, delay: 0))
+        #expect(await waitUntil { model.captures.count == 1 })
+        #expect(model.unsavedTransferCount == 1)
+        await model.suspend()
+        #expect(model.unsavedCaptureCount == 1)
+        #expect(store.photos.isEmpty)
+        await model.resume()
+        await model.retrySavingCaptures()
+        #expect(model.unsavedCaptureCount == 0)
+        #expect(store.photos.count == 1)
+        await model.stop()
+    }
+
 }

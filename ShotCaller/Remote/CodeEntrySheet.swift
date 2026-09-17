@@ -6,12 +6,14 @@ struct CodeEntrySheet: View {
     let onSubmit: (PairingCode) -> Void
 
     @State private var text = ""
+    @State private var submitted = false
     @FocusState private var focused: Bool
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 28) {
+            ScrollView {
+              VStack(spacing: 28) {
                 VStack(spacing: 8) {
                     Text("Enter the code shown on")
                         .font(.subheadline)
@@ -27,6 +29,7 @@ struct CodeEntrySheet: View {
                             DigitBox(digit: digit(at: index), isCurrent: focused && text.count == index)
                         }
                     }
+                    .accessibilityHidden(true)
                     TextField("", text: $text)
                         .keyboardType(.numberPad)
                         .textContentType(.oneTimeCode)
@@ -34,6 +37,7 @@ struct CodeEntrySheet: View {
                         .frame(width: 1, height: 1)
                         .opacity(0.02)
                         .accessibilityLabel("Pairing code")
+                        .accessibilityValue(text.isEmpty ? "Four digits" : text.map(String.init).joined(separator: " "))
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { focused = true }
@@ -56,9 +60,10 @@ struct CodeEntrySheet: View {
             .padding(.horizontal, 24)
             .onAppear { focused = true }
             .onChange(of: text) { _, newValue in
-                let digits = String(newValue.filter(\.isNumber).prefix(PairingCode.length))
+                let digits = String(newValue.filter { $0.isASCII && $0.isNumber }.prefix(PairingCode.length))
                 if digits != newValue { text = digits }
-                if digits.count == PairingCode.length { submit() }
+                if digits.count == PairingCode.length { submit(digits) }
+            }
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -66,7 +71,7 @@ struct CodeEntrySheet: View {
                 }
             }
         }
-        .presentationDetents([.medium])
+        .presentationDetents([.medium, .large])
     }
 
     private func digit(at index: Int) -> String {
@@ -74,8 +79,9 @@ struct CodeEntrySheet: View {
         return String(text[text.index(text.startIndex, offsetBy: index)])
     }
 
-    private func submit() {
-        guard let code = PairingCode(text) else { return }
+    private func submit(_ value: String? = nil) {
+        guard !submitted, let code = PairingCode(value ?? text) else { return }
+        submitted = true
         onSubmit(code)
         dismiss()
     }

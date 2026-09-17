@@ -99,6 +99,7 @@ final class MovieRecordingDelegate: NSObject, AVCaptureFileOutputRecordingDelega
                 let failure = CameraDeviceError.failed(error.localizedDescription)
                 started.fulfill(.failure(failure))
                 finished.fulfill(.failure(failure))
+                try? FileManager.default.removeItem(at: outputFileURL)
                 return
             }
         }

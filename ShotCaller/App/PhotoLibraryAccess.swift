@@ -2,9 +2,8 @@ import Observation
 import Photos
 import UIKit
 
-/// Add-only access to the Photos library, asked for once when the app first opens so the
-/// permission prompt never interrupts the first shot. Both roles need it: the camera keeps
-/// its copies here, the remote saves what it receives.
+/// Add-only access to Photos, requested after the user chooses a role and opts to save copies.
+/// The app can add captures without reading the person's existing library.
 @MainActor
 @Observable
 final class PhotoLibraryAccess {

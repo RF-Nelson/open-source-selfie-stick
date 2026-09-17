@@ -45,7 +45,8 @@ actor CaptureService: CameraDevice {
     private var activePhotoDelegates: [Int64: PhotoCaptureDelegate] = [:]
     private var movieDelegate: MovieRecordingDelegate?
     private let observers = NotificationObserverBag()
-    private var microphoneUnavailable = false
+    private var shouldRun = false
+    private var isStartingRecording = false
 
     init() {
         previewSource = PreviewSource(session: session)
@@ -54,6 +55,7 @@ actor CaptureService: CameraDevice {
     // MARK: CameraDevice
 
     func start() async throws -> CameraCapabilities {
+        shouldRun = true
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
             break
@@ -62,6 +64,7 @@ actor CaptureService: CameraDevice {
         default:
             throw CameraDeviceError.permissionDenied("camera")
         }
+        guard shouldRun, !Task.isCancelled else { throw CancellationError() }
         if !isConfigured {
             try configureSession()
         }
@@ -73,6 +76,7 @@ actor CaptureService: CameraDevice {
     }
 
     func stop() {
+        shouldRun = false
         if movieOutput.isRecording {
             movieOutput.stopRecording()
         }
@@ -82,13 +86,20 @@ actor CaptureService: CameraDevice {
 
     func apply(_ newSettings: CameraSettings) throws {
         let previous = settings
-        settings = newSettings
-        guard isConfigured else { return }
-        if newSettings.position != previous.position {
-            try switchCamera(to: newSettings.position)
+        guard isConfigured else {
+            settings = newSettings
+            return
         }
-        if newSettings.mode != previous.mode {
-            try switchMode(to: newSettings.mode)
+        guard !movieOutput.isRecording || (newSettings.position == previous.position && newSettings.mode == previous.mode) else {
+            throw CameraDeviceError.busy
+        }
+        do {
+            if newSettings.position != previous.position { try switchCamera(to: newSettings.position) }
+            if newSettings.mode != previous.mode { try switchMode(to: newSettings.mode) }
+            settings = newSettings
+        } catch {
+            if newSettings.position != previous.position { try? switchCamera(to: previous.position) }
+            throw error
         }
         if movieOutput.isRecording {
             setTorch(newSettings.mode == .video && newSettings.flash == .on)
@@ -129,8 +140,14 @@ actor CaptureService: CameraDevice {
         guard settings.mode == .video, session.outputs.contains(movieOutput) else {
             throw CameraDeviceError.failed("Switch to video first.")
         }
-        guard !movieOutput.isRecording else { throw CameraDeviceError.busy }
-        await addAudioInputIfPermitted()
+        guard !movieOutput.isRecording, !isStartingRecording, movieDelegate == nil else { throw CameraDeviceError.busy }
+        isStartingRecording = true
+        defer { isStartingRecording = false }
+        try await addAudioInputIfPermitted()
+        guard shouldRun, session.isRunning, !Task.isCancelled else { throw CancellationError() }
+        guard settings.mode == .video, session.outputs.contains(movieOutput) else {
+            throw CameraDeviceError.failed("Switch to video first.")
+        }
         if let connection = movieOutput.connection(with: .video), let rotationCoordinator {
             let angle = rotationCoordinator.videoRotationAngleForHorizonLevelCapture
             if connection.isVideoRotationAngleSupported(angle) {
@@ -156,13 +173,18 @@ actor CaptureService: CameraDevice {
     }
 
     func stopRecording() async throws -> RecordedMovie {
-        guard movieOutput.isRecording, let delegate = movieDelegate else { throw CameraDeviceError.notRecording }
+        // An interruption may already have stopped the output; the delegate still owns its file.
+        guard let delegate = movieDelegate else { throw CameraDeviceError.notRecording }
         let duration = movieOutput.recordedDuration.seconds
-        movieOutput.stopRecording()
+        if movieOutput.isRecording { movieOutput.stopRecording() }
         setTorch(false)
+        defer { movieDelegate = nil }
         let url = try await delegate.waitUntilFinished()
-        movieDelegate = nil
         return RecordedMovie(url: url, duration: duration.isFinite ? duration : 0)
+    }
+
+    func recordingHasFinished() -> Bool {
+        movieDelegate != nil && !isStartingRecording && !movieOutput.isRecording
     }
 
     func recordingDuration() -> TimeInterval {
@@ -234,6 +256,8 @@ actor CaptureService: CameraDevice {
         session.addInput(input)
         videoInput = input
         guard session.canAddOutput(photoOutput) else {
+            session.removeInput(input)
+            videoInput = nil
             session.commitConfiguration()
             throw CameraDeviceError.failed("Photo capture isn't available.")
         }
@@ -320,25 +344,26 @@ actor CaptureService: CameraDevice {
         photoOutput.maxPhotoQualityPrioritization = .quality
     }
 
-    private func addAudioInputIfPermitted() async {
-        guard audioInput == nil, !microphoneUnavailable else { return }
+    private func addAudioInputIfPermitted() async throws {
+        // Recheck on every attempt so granting access in Settings recovers without relaunching.
         var status = AVCaptureDevice.authorizationStatus(for: .audio)
         if status == .notDetermined {
             status = await AVCaptureDevice.requestAccess(for: .audio) ? .authorized : .denied
         }
-        guard status == .authorized,
-              let microphone = AVCaptureDevice.default(for: .audio),
-              let input = try? AVCaptureDeviceInput(device: microphone)
-        else {
-            microphoneUnavailable = true
-            return
+        guard status == .authorized else { throw CameraDeviceError.permissionDenied("microphone") }
+        guard shouldRun, session.isRunning, !Task.isCancelled else { throw CancellationError() }
+        guard audioInput == nil else { return }
+        guard let microphone = AVCaptureDevice.default(for: .audio) else {
+            throw CameraDeviceError.failed("The microphone isn't available right now. Try again.")
         }
+        let input = try AVCaptureDeviceInput(device: microphone)
         session.beginConfiguration()
-        if session.canAddInput(input) {
-            session.addInput(input)
-            audioInput = input
+        defer { session.commitConfiguration() }
+        guard session.canAddInput(input) else {
+            throw CameraDeviceError.failed("The microphone isn't available right now. Try again.")
         }
-        session.commitConfiguration()
+        session.addInput(input)
+        audioInput = input
     }
 
     private func setTorch(_ on: Bool) {
@@ -387,7 +412,7 @@ actor CaptureService: CameraDevice {
     }
 
     private func recoverIfStopped() {
-        if isConfigured, !session.isRunning {
+        if shouldRun, isConfigured, !session.isRunning {
             session.startRunning()
         }
     }

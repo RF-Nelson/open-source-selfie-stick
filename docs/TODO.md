@@ -2,22 +2,27 @@
 
 What's left before (and around) an App Store submission. Keep this current; delete items as they land.
 
-## Major milestone: Wi-Fi Aware (iOS 26)
+## Release milestone: physical validation
 
-The default transport is layered Bluetooth + Wi-Fi and is working on hardware. **Wi-Fi Aware is the
-remaining transport milestone** — an experimental opt-in (`WiFiAwareTransport`, `TransportFactory`'s
-`useWiFiAware` toggle) that isn't finished. Background and the earlier connection-lifetime fix are in
-`docs/TRANSPORT.md`. Goal: a reliable iOS-26 system-pairing path that connects and transfers, then
-decide whether it earns a place beside the layered default or stays an experiment.
+The earlier default Bluetooth + Wi-Fi flow was verified on two physical devices running iOS 26.
+The current changes need a new device acceptance run. Wi-Fi Aware's system-pairing-to-data handoff,
+selected endpoint, and single-peer connection handling are implemented, with model/transport
+regression coverage. This does not verify Apple's pairing UI or the radio path on real devices.
+Test two compatible devices, reconnect, cancellation, a second pairing, both role directions,
+permission changes, and photo/video delivery. See [TRANSPORT.md](TRANSPORT.md).
 
 ## Pre-review
 
-- **First-run permission onboarding.** The system prompts (Bluetooth, Camera, Microphone, Local
-  Network, Photos) currently fire ad hoc — e.g. the Bluetooth prompt appears the first time a role
-  opens the transport, which is surprising mid-task. Add a first-launch screen that explains what the
-  app will ask for and why, then triggers the prompts in sequence after the user taps OK. No
-  unexplained popups. _Reported 2026-08-26 during Bluetooth transport bring-up._
-- iPad layout pass, localisation, manual exposure, a session gallery.
+- **Verify the first-use setup on devices.** Role-specific explanations and optional saving are
+  implemented. Camera authorization is limited to the camera role; Microphone is requested for
+  video; Photos uses add-only authorization. Exercise denied/restricted access and return from
+  Settings, including failed-save recovery.
+- **Verify layouts and accessibility.** Adaptive iPhone/iPad layouts and accessible controls are
+  implemented; test portrait/landscape, Larger Text, and VoiceOver on hardware.
+- **Complete release account work.** Publish policy/support URLs, confirm the support route and
+  distribution entitlement, capture screenshots, and complete App Store Connect declarations.
+  Use [APP_STORE_RELEASE.md](APP_STORE_RELEASE.md) for the exact acceptance matrix and review notes.
+  The new App Store archive script exports locally; the existing TestFlight script remains internal-only.
 
 ## Nice to have
 
@@ -26,20 +31,10 @@ decide whether it earns a place beside the layered default or stays an experimen
   deliberately. (The transport already knows which channel is active, so this is about *quality*, not
   *which* channel.)
 - Allow the shutter during a quick Wi-Fi auto-download while still pausing it for a slow Bluetooth
-  download (today it's paused for any in-flight download — acceptable per testing).
+  download. Recording stop/countdown cancel must remain available during transfers.
+- Localisation, manual exposure, and a session gallery.
 
-## Open decision: open source & license
+## License
 
-Currently **[MPL-2.0](../LICENSE)**. Leaning toward keeping the project open source. License options:
-
-- **Keep MPL-2.0** (weak, file-level copyleft). Modifications to the project's own files stay open;
-  the code can still be combined with proprietary code. **App Store-safe.** Good default for "share
-  it and keep improvements to the shared code open." _Recommended unless we specifically want maximum
-  permissive adoption._
-- **MIT / Apache-2.0** (permissive). Anyone can do anything, including proprietary forks, with no
-  obligation to contribute back. Apache-2.0 adds an explicit patent grant. Best for maximum adoption.
-- **Avoid GPL-family** for an App Store app — GPL's terms conflict with App Store distribution (this
-  is the issue that got VLC pulled). Don't go here.
-
-Decision pending. Since the repo is already MPL-2.0 and it's App Store-safe, "keep MPL-2.0" is the
-low-friction choice; switch to Apache-2.0 only if broad permissive reuse is the goal.
+The repository remains under **[MPL-2.0](../LICENSE)**. This release preparation does not change the
+license. Any relicensing is a separate owner decision; a license choice is not an App Store approval guarantee.

@@ -159,9 +159,10 @@ task. `stopAdvertising()` cancelled that task, which cancelled the live connecti
 the remote. Trace showed every attempt as `preparing → ready → (instant) messages ended →
 markDisconnected`.
 
-**The fix.** `stopAdvertising()` now no-ops while a connection is live (`connection != nil`). A
-OneToOne `NetworkListener` won't hand us a second peer while the first is being handled, so leaving
-the listener task running is safe; discovery restarts on disconnect. The transient
+**The fix.** `stopAdvertising()` now no-ops while a connection is live (`connection != nil`). The
+transport must also reject additional incoming connections explicitly. `OneToOneProtocol` describes
+the protocol stack, not a one-remote limit; each listener connection has its own child task. Discovery
+restarts on disconnect. The transient
 "Turn WiFi on for a reliable link" banner is a `.waiting` hint during `preparing`, not the failure
 cause — the data path does reach ready even with Wi-Fi on-but-not-joined.
 
@@ -177,3 +178,56 @@ service. (2) The remote's "You are <name>" hint is shown only on the code-pairin
 --source Documents/transport.log`. `Trace.reset()` clears once per launch so reconnect churn
 accumulates into one file. Strip or keep the `Trace` calls at release (they no-op if the file can't
 be written).
+
+
+## Wi-Fi Aware — pairing handoff and cancellation (2026-09-16)
+
+The post-pairing connection path now has an explicit owner handoff. `WiFiAwarePairingState` first
+suspends discovery and awaits its cancelled tasks before mounting DeviceDiscoveryUI. A camera
+observes `WAPairedDevice.allDevices` updates; the remote keeps its picker alive until `onSelect`
+returns the actual endpoint. Removing the pairing control resumes the transport, registers that
+selected endpoint and initiates the connection. A remembered pair no longer removes the ability to
+pair another device. DevicePairingView exposes no completion callback: reselecting an existing pair
+may not change the paired-device registry, so the camera explicitly offers **Done pairing** after the
+system panel is closed. The connecting screen and timeout explain this step. Cancelling pairing or backing out releases ownership without disconnecting a
+newly selected connection.
+
+This separation follows Apple's [Wi-Fi Aware sample](https://developer.apple.com/documentation/WiFiAware/Building-peer-to-peer-apps),
+which dismisses pairing views before starting data discovery. The [adoption guide](https://developer.apple.com/documentation/wifiaware/adopting-wi-fi-aware)
+limits a service to one publisher per device. The app keeps its existing `_shotcaller._udp` service
+identifier for compatibility; its actual data protocol remains reliable TCP.
+
+Connection attempts have distinct generations, so delayed callbacks from a previous attempt cannot
+tear down a reconnect to the same device. Accepted connections stay inside the listener task; outgoing
+connections are constructed inside a retained task. Disconnect and connection timeouts cancel those
+owners, rather than merely clearing a reference. `connected` is emitted once at Network's `.ready`
+state. The transport explicitly accepts only one remote, removes vanished discovery results, and
+serializes control messages. Partial received files are discarded on disconnect, cancellation, size
+mismatch or disk errors; they are never reported as complete captures.
+
+Runtime support is checked with `WACapabilities.supportedFeatures`, in addition to iOS 26
+availability. Apple's [supported hardware list](https://developer.apple.com/documentation/WiFiAware)
+begins at iPhone 12 and includes only supported iPads; an iOS version check alone is insufficient.
+Automatic remains the default and supports older devices through Bluetooth plus the Wi-Fi fast lane.
+
+### Physical-device acceptance checks still required
+
+Native unit tests exercise the single-session generation guard, including old disconnect callbacks,
+duplicate readiness, refusal of a second remote, and release after a failed attempt. An SDK build
+cannot verify Wi-Fi Aware radio behavior, and Apple's sample does not run in Simulator. Before release,
+use two supported physical devices to verify:
+
+1. A fresh pair: Camera → Pair a remote, Remote → Pair a camera, complete the system prompt; both
+   screens reach connected without manually restarting discovery.
+2. Reopen both roles with existing pairing and connect from the discovered-camera list.
+3. Pair another device when there is already a remembered pair; cancel or dismiss system pairing
+   and confirm normal discovery resumes.
+4. Cancel while connecting, move out of range, toggle Wi-Fi, and reconnect; a late old-session
+   callback must not terminate the replacement session.
+5. Send a photo and video, interrupt a transfer and retry; no truncated file may enter Photos.
+6. Repeat with Wi-Fi enabled but neither device joined to an access point, then test Automatic on
+   a mixed supported/unsupported pair.
+
+A read-only log pull from Rich's iPhone on September 16 contained an older August 26 Automatic
+session, so it did not reproduce or validate the current Wi-Fi Aware pairing failure. These code
+changes require fresh on-device validation; they are not recorded as hardware-verified here.

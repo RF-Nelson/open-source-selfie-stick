@@ -15,8 +15,8 @@ public final class LayeredTransport: PeerTransport, @unchecked Sendable {
     public var supportsFileTransfer: Bool { true }   // BLE always; Wi-Fi accelerates when reachable
 
     private let continuation: AsyncStream<TransportEvent>.Continuation
-    private let ble: BluetoothTransport
-    private let wifi: MultipeerTransport
+    private let ble: any PeerTransport
+    private let wifi: any PeerTransport
     private let lock = NSLock()
 
     private enum Role { case none, camera, remote }
@@ -33,9 +33,14 @@ public final class LayeredTransport: PeerTransport, @unchecked Sendable {
     private var wifiPeer: Peer?      // the Multipeer peer once its leg connects
     private var wifiUp = false
 
-    public init(displayName: String) {
-        ble = BluetoothTransport(displayName: displayName)
-        wifi = MultipeerTransport(displayName: displayName)
+    public convenience init(displayName: String) {
+        self.init(primary: BluetoothTransport(displayName: displayName), fastLane: MultipeerTransport(displayName: displayName))
+    }
+
+    /// Injected legs let the authentication and peer mapping be verified without radio hardware.
+    init(primary: any PeerTransport, fastLane: any PeerTransport) {
+        ble = primary
+        wifi = fastLane
         localPeer = ble.localPeer
         (events, continuation) = AsyncStream.makeStream(of: TransportEvent.self, bufferingPolicy: .unbounded)
         let bleEvents = ble.events
@@ -231,9 +236,17 @@ public final class LayeredTransport: PeerTransport, @unchecked Sendable {
                 continuation.yield(.fileChannelFast(false))
                 scheduleWiFiRestart()
             }
-        case .fileReceiveStarted, .fileReceiveProgress, .fileReceived, .fileReceiveFailed,
-             .fileSendProgress, .fileSendFinished:
-            continuation.yield(event)   // a file arrived/left over the fast lane
+        case .fileReceiveStarted(let name, let peer):
+            guard let primary = lock.withLock({ wifiPeer?.id == peer.id ? primaryPeer : nil }) else { return }
+            continuation.yield(.fileReceiveStarted(name: name, from: primary))
+        case .fileReceived(let name, let url, let peer):
+            guard let primary = lock.withLock({ wifiPeer?.id == peer.id ? primaryPeer : nil }) else {
+                try? FileManager.default.removeItem(at: url)
+                return
+            }
+            continuation.yield(.fileReceived(name: name, url: url, from: primary))
+        case .fileReceiveProgress, .fileReceiveFailed, .fileSendProgress, .fileSendFinished:
+            continuation.yield(event)   // a file arrived/left over the authenticated fast lane
         case .failure(let message):
             Trace.log("layered: Wi-Fi leg reported \(message)")   // optional leg; never surface
         case .connecting, .message, .peerLost, .fileChannelFast:

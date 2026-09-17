@@ -8,6 +8,9 @@ struct RemoteScreen: View {
     @State private var model: RemoteModel?
     @State private var codeTarget: Peer?
     @State private var showSettings = false
+    @State private var transport: (any PeerTransport)?
+    @State private var confirmClose = false
+    @Environment(\.scenePhase) private var scenePhase
     @Environment(PhotoLibraryAccess.self) private var photoAccess
 
     var body: some View {
@@ -22,18 +25,40 @@ struct RemoteScreen: View {
         .preferredColorScheme(.dark)
         .task {
             UIApplication.shared.isIdleTimerDisabled = true
-            let model = self.model ?? RemoteModel(
-                transport: TransportFactory.make(displayName: DeviceIdentity.displayName),
-                mediaStore: PhotoKitMediaStore(),
-                appVersion: DeviceIdentity.appVersion
-            )
-            self.model = model
-            model.start()
+            if model == nil {
+                let transport = TransportFactory.make(displayName: DeviceIdentity.displayName)
+                self.transport = transport
+                let model = RemoteModel(transport: transport, mediaStore: PhotoKitMediaStore(), appVersion: DeviceIdentity.appVersion)
+                model.sendBackPhotos = UserDefaults.standard.object(forKey: SessionPreferences.sendsPhotos) as? Bool ?? true
+                model.sendBackVideos = UserDefaults.standard.bool(forKey: SessionPreferences.sendsVideos)
+                self.model = model
+            }
+            model?.start()
             TransportFactory.markStarted()
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
             model?.stop()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            UIApplication.shared.isIdleTimerDisabled = phase == .active
+            if phase == .active {
+                photoAccess.refresh()
+                model?.resume()
+                if photoAccess.isGranted { Task { await model?.retrySavingCaptures() } }
+            } else if phase == .background {
+                model?.suspend()
+            }
+        }
+        .confirmationDialog("Leave this session?", isPresented: $confirmClose, titleVisibility: .visible) {
+            Button("Leave session", role: .destructive) { onClose() }
+            Button("Keep session open", role: .cancel) { }
+        } message: {
+            Text(model?.unsavedCaptureCount ?? 0 > 0
+                 ? "Shots waiting to save on this device will be discarded. Save them before leaving to keep their originals."
+                 : hasWaitingOriginals
+                 ? "Some originals have not been saved on either device. Download them before leaving, or disconnecting will discard them from the camera."
+                 : "The camera is recording or a transfer is in progress. Check the camera before leaving.")
         }
     }
 
@@ -43,24 +68,26 @@ struct RemoteScreen: View {
             header(model)
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
-            if photoAccess.isDenied {
+            if photoAccess.isDenied && (model.sendBackPhotos || model.sendBackVideos) {
                 PhotoAccessWarning(access: photoAccess)
                     .padding(.horizontal, 16)
                     .padding(.top, 12)
             }
+            PendingSavesBanner(count: model.unsavedCaptureCount) { Task { await model.retrySavingCaptures() } }
+                .padding(.horizontal, 16)
             switch model.connection {
             case .idle, .browsing:
-                DiscoveryView(model: model) { peer in
+                if let transport { DiscoveryView(model: model, transport: transport) { peer in
                     if model.requiresCode {
                         codeTarget = peer
                     } else {
                         model.connect(to: peer)   // Wi-Fi Aware: system already paired the devices
                     }
-                }
+                } }
             case .connecting(let peer):
-                ConnectingView(peer: peer) { model.disconnect() }
+                ConnectingView(peer: peer, usesWiFiAware: !model.requiresCode) { model.disconnect() }
             case .connected:
-                ControlDeck(model: model, showSettings: $showSettings)
+                ControlDeck(model: model)
             }
         }
         .overlay(alignment: .top) {
@@ -80,104 +107,136 @@ struct RemoteScreen: View {
     }
 
     private func header(_ model: RemoteModel) -> some View {
-        HStack {
-            ControlButton(systemImage: "xmark", label: "Close") { onClose() }
-            Spacer()
-            switch model.connection {
-            case .connected(let peer):
+        VStack(spacing: 8) {
+            HStack {
+                ControlButton(systemImage: "xmark", label: "Close remote") {
+                    if model.unsavedCaptureCount > 0 || model.cameraState?.isRecording == true || model.isReceivingFile || hasWaitingOriginals {
+                        confirmClose = true
+                    } else { onClose() }
+                }
+                Spacer()
+                Text("Remote").font(.headline).foregroundStyle(.white)
+                Spacer()
+                ControlButton(systemImage: "gearshape.fill", label: "Settings") { showSettings = true }
+            }
+            if case .connected(let peer) = model.connection {
                 HStack(spacing: 8) {
                     StatusPill(text: model.camera?.displayName ?? peer.displayName, systemImage: "camera.fill", tint: Theme.success)
                     ChannelPill(fast: model.fileChannelFast)
                 }
-                Spacer()
-                ControlButton(systemImage: "gearshape.fill", label: "Settings") { showSettings = true }
-            default:
-                StatusPill(text: "Remote", systemImage: "dot.radiowaves.left.and.right", tint: Theme.inkMuted)
-                Spacer()
-                ControlButton(systemImage: "gearshape.fill", label: "Settings") { showSettings = true }
             }
         }
+    }
+
+    private var hasWaitingOriginals: Bool {
+        guard let model else { return false }
+        return model.captures.contains { $0.fileAvailable && $0.savedOnCamera == false && !model.isDownloaded($0) }
     }
 }
 
 private struct DiscoveryView: View {
     let model: RemoteModel
+    let transport: any PeerTransport
     let onSelect: (Peer) -> Void
     @State private var pairingState = WiFiAwarePairingState()
+    @State private var showHelp = false
 
     var body: some View {
-        VStack(spacing: 24) {
-            Spacer()
-            if !model.requiresCode, #available(iOS 26.0, *), !pairingState.hasPaired {
-                RemotePairButton(onPaired: { model.restartBrowsing() })
-            }
-            if model.cameras.isEmpty {
-                VStack(spacing: 14) {
-                    ProgressView().tint(.white).controlSize(.large)
-                    Text("Looking for cameras…")
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                    Text("Open Shot Caller on the other device and choose Camera. Both devices need Wi-Fi or Bluetooth on.")
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.inkMuted)
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 320)
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Cameras nearby")
-                        .font(.caption.weight(.bold))
-                        .textCase(.uppercase)
-                        .tracking(1.4)
-                        .foregroundStyle(Theme.inkMuted)
-                    ForEach(model.cameras) { camera in
-                        Button {
-                            onSelect(camera)
-                        } label: {
-                            HStack(spacing: 14) {
-                                Image(systemName: "camera.fill")
-                                    .font(.title3)
-                                    .foregroundStyle(.white)
-                                    .frame(width: 44, height: 44)
-                                    .background(Color.accentColor, in: Circle())
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(camera.displayName)
-                                        .font(.headline)
-                                        .foregroundStyle(.white)
-                                    Text("Tap, then enter the code on its screen")
-                                        .font(.footnote)
-                                        .foregroundStyle(Theme.inkMuted)
-                                }
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .foregroundStyle(Theme.inkMuted)
-                            }
-                            .padding(16)
-                            .background(Theme.panel, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        ScrollView {
+            VStack(spacing: 24) {
+                Image(systemName: "camera.viewfinder")
+                    .font(.system(size: 52)).foregroundStyle(Theme.inkMuted)
+                    .accessibilityHidden(true)
+                Text(model.cameras.isEmpty ? "Let’s find your camera." : "Choose your camera")
+                    .font(.title2.bold()).foregroundStyle(.white)
+                Text(model.requiresCode
+                     ? "Open Shot Caller on the other device and choose Camera. Keep Bluetooth on and both apps open."
+                     : "Choose Wi-Fi Aware on both devices. Open Camera on the other device and pair it here.")
+                    .font(.subheadline).foregroundStyle(Theme.inkMuted)
+                    .multilineTextAlignment(.center)
+                if !model.requiresCode, #available(iOS 26.0, *) {
+                    if pairingState.isLoading {
+                        ProgressView("Checking paired devices…").tint(.white)
+                    } else if pairingState.isPairing {
+                        RemotePairButton { endpoint in
+                            pairingState.select(endpoint: endpoint) { model.connect(to: $0) }
                         }
-                        .buttonStyle(.plain)
+                        .onDisappear { pairingState.pairingControlDidDisappear() }
+                        Button("Done pairing") { pairingState.endPairing() }
+                            .buttonStyle(.bordered).tint(.white)
+                    } else {
+                        Button { pairingState.beginPairing() } label: {
+                            Label(pairingState.hasPaired ? "Pair another camera" : "Pair a camera", systemImage: "plus.circle")
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    if let error = pairingState.error {
+                        Text(error).font(.footnote).foregroundStyle(.yellow)
                     }
                 }
-                .frame(maxWidth: 480)
+                if model.cameras.isEmpty && (model.requiresCode || !pairingState.isPairing) {
+                    HStack {
+                        ProgressView().tint(.white)
+                        Text(model.isReconnecting ? "Reconnecting…" : "Looking for cameras…")
+                            .font(.subheadline).foregroundStyle(Theme.inkMuted)
+                    }
+                }
+                ForEach(model.cameras) { camera in
+                    Button { onSelect(camera) } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: "camera.fill")
+                                .font(.title3).foregroundStyle(.white)
+                                .frame(width: 44, height: 44)
+                                .background(Color.accentColor, in: Circle())
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(camera.displayName).font(.headline).foregroundStyle(.white)
+                                Text(model.requiresCode ? "Enter the code shown on its screen" : "Paired · tap to connect")
+                                    .font(.footnote).foregroundStyle(Theme.inkMuted)
+                            }
+                            Spacer(minLength: 0)
+                            Image(systemName: "chevron.right").foregroundStyle(Theme.inkMuted)
+                        }
+                        .padding(16)
+                        .background(Theme.panel, in: RoundedRectangle(cornerRadius: 18))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(pairingState.isPairing)
+                }
+                Button("Can’t find your camera?") { showHelp.toggle() }
+                    .frame(minHeight: 44)
+                if showHelp {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Keep both devices nearby and unlocked, with Shot Caller in the foreground.")
+                        Text(model.requiresCode
+                             ? "Use Automatic on both home screens. Allow Bluetooth in Settings. Wi-Fi helps transfer files faster."
+                             : "Use Wi-Fi Aware on both home screens, with Wi-Fi and Bluetooth on. Tap Pair a remote on the camera, then pair it here. To use another connection, close this session and turn Wi-Fi Aware off on both devices.")
+                        Button("Open app settings") { openSettings() }
+                        if !pairingState.isPairing {
+                            Button("Search again") { model.restartBrowsing() }
+                        }
+                    }
+                    .font(.subheadline).foregroundStyle(.white)
+                    .padding(18).background(Theme.panel, in: RoundedRectangle(cornerRadius: 18))
+                }
+                if model.requiresCode {
+                    Text("You are “\(model.localName)”").font(.footnote).foregroundStyle(Theme.inkMuted)
+                }
             }
-            Spacer()
-            // Wi-Fi Aware presents the system-assigned device names itself, so only show our own
-            // local-name hint on the code-pairing (Multipeer) path where the app manages names.
-            if model.requiresCode {
-                Text("You are “\(model.localName)”")
-                    .font(.footnote)
-                    .foregroundStyle(Theme.inkMuted)
-                    .padding(.bottom, 16)
-            }
+            .padding(24).frame(maxWidth: 520).frame(maxWidth: .infinity)
         }
-        .padding(.horizontal, 24)
-        .onAppear { pairingState.start() }
+        .task { if !model.requiresCode { pairingState.start(transport: transport) } }
         .onDisappear { pairingState.stop() }
+    }
+
+    private func openSettings() {
+        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(url)
     }
 }
 
 private struct ConnectingView: View {
     let peer: Peer
+    let usesWiFiAware: Bool
     let onCancel: () -> Void
 
     var body: some View {
@@ -187,6 +246,14 @@ private struct ConnectingView: View {
             Text("Connecting to \(peer.displayName)…")
                 .font(.headline)
                 .foregroundStyle(.white)
+            if usesWiFiAware {
+                Text("On the camera, finish Apple’s pairing prompt, then tap Done pairing if its pairing panel is still open.")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.inkMuted)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 360)
+                    .padding(.horizontal, 24)
+            }
             Button("Cancel") { onCancel() }
                 .buttonStyle(.bordered)
                 .tint(.white)
@@ -197,50 +264,36 @@ private struct ConnectingView: View {
 
 private struct ControlDeck: View {
     let model: RemoteModel
-    @Binding var showSettings: Bool
     @State private var downloadTarget: CaptureResult?
+    @State private var previewCapture: CaptureResult?
 
     var body: some View {
-        let state = model.cameraState
-        let capabilities = model.camera?.capabilities ?? CameraCapabilities()
-        VStack(spacing: 20) {
-            Spacer(minLength: 12)
-            stage(state)
-            Spacer(minLength: 12)
-            TransferBannerHost(transfer: model.transfer)
-            HStack(spacing: 18) {
-                ControlButton(
-                    systemImage: (state?.flash ?? .off) == .off ? "bolt.slash.fill" : ((state?.flash ?? .off) == .auto ? "bolt.badge.automatic.fill" : "bolt.fill"),
-                    label: "Flash",
-                    isActive: (state?.flash ?? .off) != .off,
-                    isEnabled: capabilities.hasFlash && state != nil
-                ) { model.cycleFlash() }
-                ControlButton(
-                    systemImage: "timer",
-                    label: "Timer",
-                    badge: model.timerSeconds == 0 ? nil : "\(model.timerSeconds)s",
-                    isActive: model.timerSeconds != 0
-                ) { model.timerSeconds = model.timerSeconds == 0 ? 3 : (model.timerSeconds == 3 ? 10 : 0) }
-                ControlButton(
-                    systemImage: "arrow.triangle.2.circlepath.camera",
-                    label: "Switch camera",
-                    isEnabled: capabilities.hasFrontCamera && state?.isRecording != true && state != nil
-                ) { model.flipCamera() }
+        GeometryReader { geometry in
+            ScrollView {
+                let wide = geometry.size.width > 650 && geometry.size.width > geometry.size.height
+                if wide {
+                    HStack(spacing: 40) {
+                        stage(model.cameraState, previewSize: min(300, geometry.size.height * 0.55))
+                            .frame(maxWidth: .infinity)
+                        controls.frame(maxWidth: 340)
+                    }
+                    .padding(24)
+                    .frame(minHeight: geometry.size.height)
+                } else {
+                    VStack(spacing: 24) {
+                        stage(model.cameraState, previewSize: min(240, geometry.size.width - 64))
+                        controls
+                    }
+                    .padding(24)
+                    .frame(maxWidth: 520)
+                    .frame(minHeight: geometry.size.height)
+                    .frame(maxWidth: .infinity)
+                }
             }
-            ModeSwitch(mode: state?.mode ?? .photo, canRecord: capabilities.canRecordVideo, isLocked: state?.isRecording ?? true) {
-                model.setMode($0)
-            }
-            ShutterButton(look: .forState(state), size: 124) { model.shutter() }
-                .disabled(model.isReceivingFile)
-                .opacity(model.isReceivingFile ? 0.4 : 1)
-            Text(model.isReceivingFile ? "Downloading… shutter paused" : hint(state))
-                .font(.footnote)
-                .foregroundStyle(Theme.inkMuted)
-                .padding(.bottom, 12)
         }
-        .padding(.horizontal, 24)
-        .frame(maxWidth: 480)
-        .frame(maxWidth: .infinity)
+        .sheet(item: $previewCapture) { capture in
+            CapturePreviewSheet(capture: capture, savedHere: model.isDownloaded(capture))
+        }
         .confirmationDialog(
             "Download over Bluetooth?",
             isPresented: Binding(get: { downloadTarget != nil }, set: { if !$0 { downloadTarget = nil } }),
@@ -263,12 +316,47 @@ private struct ControlDeck: View {
             }
             Button("Cancel", role: .cancel) { }
         } message: { capture in
-            Text("You're connected over Bluetooth, so this \(ByteCountFormatter.string(fromByteCount: Int64(capture.byteCount), countStyle: .file)) \(capture.kind == .video ? "video" : "photo") takes about \(model.estimatedBluetoothSeconds(for: capture)) seconds. On the same Wi-Fi it would arrive in a second or two.")
+            Text("Over Bluetooth, this \(ByteCountFormatter.string(fromByteCount: Int64(capture.byteCount), countStyle: .file)) \(capture.kind == .video ? "video" : "photo") may take about \(model.estimatedBluetoothSeconds(for: capture)) seconds. Keeping Wi-Fi on or joining the same network can make transfers faster.")
+        }
+    }
+
+    private var controls: some View {
+        let state = model.cameraState
+        let capabilities = model.camera?.capabilities ?? CameraCapabilities()
+        return VStack(spacing: 18) {
+            TransferBannerHost(transfer: model.transfer)
+            HStack(spacing: 18) {
+                ControlButton(
+                    systemImage: (state?.flash ?? .off) == .off ? "bolt.slash.fill" : ((state?.flash ?? .off) == .auto ? "bolt.badge.automatic.fill" : "bolt.fill"),
+                    label: "Flash \(state?.flash.rawValue ?? "off")",
+                    isActive: (state?.flash ?? .off) != .off,
+                    isEnabled: capabilities.hasFlash && state != nil && state?.isBusy != true
+                ) { model.cycleFlash() }
+                ControlButton(systemImage: "timer", label: "Timer",
+                              badge: model.timerSeconds == 0 ? "Off" : "\(model.timerSeconds)s",
+                              isActive: model.timerSeconds != 0,
+                              isEnabled: state?.isRecording != true && state?.isBusy != true) {
+                    model.timerSeconds = model.timerSeconds == 0 ? 3 : (model.timerSeconds == 3 ? 10 : 0)
+                }
+                ControlButton(systemImage: "arrow.triangle.2.circlepath.camera", label: "Switch camera",
+                              isEnabled: capabilities.hasFrontCamera && state?.isRecording != true && state?.isBusy != true && state != nil) {
+                    model.flipCamera()
+                }
+            }
+            ModeSwitch(mode: state?.mode ?? .photo, canRecord: capabilities.canRecordVideo,
+                       isLocked: state == nil || state?.isRecording == true || state?.isBusy == true || state?.countdown != nil) {
+                model.setMode($0)
+            }
+            ShutterButton(look: .forState(state), size: 116) { model.shutter() }
+                .disabled(model.isReceivingFile && state?.isRecording != true && state?.countdown == nil)
+                .opacity(model.isReceivingFile && state?.isRecording != true ? 0.4 : 1)
+            Text(model.isReceivingFile && state?.isRecording != true ? "Downloading… shutter paused" : hint(state))
+                .font(.footnote).foregroundStyle(Theme.inkMuted).multilineTextAlignment(.center)
         }
     }
 
     @ViewBuilder
-    private func stage(_ state: CameraState?) -> some View {
+    private func stage(_ state: CameraState?, previewSize: CGFloat) -> some View {
         if let seconds = state?.countdown {
             CountdownOverlay(seconds: seconds)
                 .frame(height: 220)
@@ -291,11 +379,13 @@ private struct ControlDeck: View {
         } else {
             VStack(spacing: 22) {
                 Button {
-                    ExternalApp.openPhotos()
+                    previewCapture = model.lastCapture
                 } label: {
-                    CaptureThumbnail(result: model.lastCapture, size: 300)
+                    CaptureThumbnail(result: model.lastCapture, size: previewSize)
                 }
                 .buttonStyle(.plain)
+                .disabled(model.lastCapture == nil)
+                .accessibilityHint("Shows a preview and whether the original is saved here")
                 if let capture = model.lastCapture, model.canDownloadFullFile(capture) {
                     Button {
                         downloadTarget = capture
@@ -317,19 +407,14 @@ private struct ControlDeck: View {
                     .controlSize(.large)
                     .tint(.red)
                 }
-                Button {
-                    ExternalApp.openPhotos()
-                } label: {
-                    Label("Open Photos", systemImage: "photo.on.rectangle.angled")
-                        .font(.subheadline.weight(.semibold))
-                }
-                .buttonStyle(.bordered)
-                .tint(.white)
                 Text(model.lastCapture == nil
-                     ? "Shots you take appear here and in Photos"
-                     : "\(model.captures.count) this session · tap to open Photos")
-                    .font(.caption)
-                    .foregroundStyle(Theme.inkMuted)
+                     ? "Your latest shot will appear here."
+                     : "\(model.captures.count) this session · tap for preview")
+                    .font(.caption).foregroundStyle(Theme.inkMuted)
+                if let capture = model.lastCapture {
+                    Text(model.isDownloaded(capture) ? "Saved to Photos on this device" : "Preview received · original not saved here yet")
+                        .font(.footnote).foregroundStyle(Theme.inkMuted).multilineTextAlignment(.center)
+                }
             }
         }
     }
@@ -338,9 +423,9 @@ private struct ControlDeck: View {
         guard let state else { return "" }
         switch state.mode {
         case .photo:
-            return model.sendBackPhotos ? "Photos come back to this device" : "Photos stay on the camera"
+            return model.sendBackPhotos ? "Photo copies are requested on this device" : "Photo copies are off on this device"
         case .video:
-            return model.sendBackVideos ? "Videos come back to this device (Wi-Fi recommended)" : "Videos stay on the camera"
+            return model.sendBackVideos ? "Video copies are requested (Wi-Fi recommended)" : "Video copies are off on this device"
         }
     }
 }
@@ -348,9 +433,9 @@ private struct ControlDeck: View {
 private struct RemoteSettingsSheet: View {
     @Bindable var model: RemoteModel
     @AppStorage(DeviceIdentity.nicknameKey) private var nickname = ""
-    @AppStorage(TransportFactory.wifiAwarePreferenceKey) private var useWiFiAware = false
     @Environment(\.dismiss) private var dismiss
     @Environment(PhotoLibraryAccess.self) private var photoAccess
+    @State private var confirmDisconnect = false
 
     var body: some View {
         NavigationStack {
@@ -358,11 +443,6 @@ private struct RemoteSettingsSheet: View {
                 Section {
                     Toggle("Photos", isOn: $model.sendBackPhotos)
                     Toggle("Videos", isOn: $model.sendBackVideos)
-                    Button {
-                        ExternalApp.openPhotos()
-                    } label: {
-                        Label("Open Photos", systemImage: "photo.on.rectangle.angled")
-                    }
                 } header: {
                     Text("Send copies to this device")
                 } footer: {
@@ -392,20 +472,20 @@ private struct RemoteSettingsSheet: View {
                 } footer: {
                     Text("The camera currently sees this device as “\(model.localName)”. A nickname applies the next time you open the remote.")
                 }
-                if TransportFactory.wifiAwareSupported {
-                    Section {
-                        Toggle("Use Wi-Fi Aware", isOn: $useWiFiAware)
-                    } header: {
-                        Text("Experimental")
-                    } footer: {
-                        Text("Connect over Wi‑Fi Aware instead of the default Bluetooth + Wi‑Fi. Both devices need iOS 26 and must be paired in the system pairing prompt. Applies next time you open the remote.")
-                    }
+                Section("Connection") {
+                    Text(model.requiresCode ? "Automatic · Bluetooth and Wi-Fi" : "Wi-Fi Aware")
+                    Text("To change the connection, close this session and choose the same option on both home screens.")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
                 if model.connection.isConnected {
                     Section {
                         Button("Disconnect from camera", role: .destructive) {
-                            model.disconnect()
-                            dismiss()
+                            if model.captures.contains(where: { $0.fileAvailable && $0.savedOnCamera == false && !model.isDownloaded($0) }) || model.isReceivingFile || model.cameraState?.isRecording == true {
+                                confirmDisconnect = true
+                            } else {
+                                model.disconnect()
+                                dismiss()
+                            }
                         }
                     }
                 }
@@ -417,6 +497,22 @@ private struct RemoteSettingsSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+        }
+        .confirmationDialog("Disconnect from the camera?", isPresented: $confirmDisconnect, titleVisibility: .visible) {
+            Button("Disconnect", role: .destructive) {
+                model.disconnect()
+                dismiss()
+            }
+        } message: {
+            Text("Wait for recording and downloads to finish. Any originals waiting on the camera with no copy in Photos will be discarded when you disconnect.")
+        }
+        .onChange(of: model.sendBackPhotos) { _, value in
+            UserDefaults.standard.set(value, forKey: SessionPreferences.sendsPhotos)
+            if value { Task { await photoAccess.requestIfNeeded() } }
+        }
+        .onChange(of: model.sendBackVideos) { _, value in
+            UserDefaults.standard.set(value, forKey: SessionPreferences.sendsVideos)
+            if value { Task { await photoAccess.requestIfNeeded() } }
         }
         .presentationDetents([.medium, .large])
     }

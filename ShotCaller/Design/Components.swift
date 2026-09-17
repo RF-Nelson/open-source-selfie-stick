@@ -54,6 +54,7 @@ struct ControlButton: View {
         .disabled(!isEnabled)
         .opacity(isEnabled ? 1 : 0.35)
         .accessibilityLabel(label)
+        .accessibilityValue(badge ?? (isActive ? "On" : ""))
     }
 }
 
@@ -116,10 +117,11 @@ struct ShutterButton: View {
 }
 
 private struct ShutterPressStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.9 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.94 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -141,12 +143,15 @@ struct ModeSwitch: View {
                         .foregroundStyle(candidate == mode ? Color.black : Color.white)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 9)
+                        .frame(minHeight: 44)
                         .background {
                             if candidate == mode { Capsule().fill(.white) }
                         }
                 }
                 .buttonStyle(.plain)
                 .disabled(isLocked || (candidate == .video && !canRecord))
+                .accessibilityLabel(candidate == .photo ? "Photo mode" : "Video mode")
+                .accessibilityAddTraits(candidate == mode ? [.isSelected] : [])
             }
         }
         .padding(4)
@@ -257,7 +262,7 @@ struct TransferBanner: View {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.white)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
                 if !status.isFinished {
                     ProgressView(value: status.fraction)
                         .tint(.white)
@@ -279,7 +284,7 @@ struct TransferBanner: View {
         case .receiving: "Receiving \(kind)… \(Int(status.fraction * 100))%"
         case .saving: "Saving to Photos…"
         case .saved: "Saved to Photos"
-        case .failed(let reason): "Couldn't save the \(kind): \(reason)"
+        case .failed(let reason): "Transfer didn’t finish: \(reason)"
         }
     }
 
@@ -307,7 +312,6 @@ struct TransferBanner: View {
 struct TransferBannerHost: View {
     let transfer: TransferStatus?
     @State private var hidden = false
-    @State private var hideTask: Task<Void, Never>?
 
     var body: some View {
         Group {
@@ -317,14 +321,12 @@ struct TransferBannerHost: View {
             }
         }
         .animation(.easeOut(duration: 0.2), value: transfer == nil || hidden)
-        .onChange(of: transfer) { _, new in
-            hideTask?.cancel()
+        .task(id: transfer) {
             hidden = false
-            guard let new, new.isFinished else { return }
-            hideTask = Task {
-                try? await Task.sleep(for: .seconds(2.5))
-                if !Task.isCancelled { hidden = true }
-            }
+            guard let transfer, transfer.isFinished else { return }
+            if case .failed = transfer.phase { return }
+            do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            hidden = true
         }
     }
 }
@@ -400,15 +402,73 @@ struct PhotoAccessWarning: View {
         .padding(14)
         .background(Color.yellow.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Color.yellow.opacity(0.35)))
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .contain)
     }
 }
 
 
-/// Opens the system Photos app so people can review what was saved this session.
-enum ExternalApp {
-    @MainActor static func openPhotos() {
-        guard let url = URL(string: "photos-redirect://") else { return }
-        UIApplication.shared.open(url)
+/// A thumbnail is a preview, not proof that the original has been saved.
+struct CapturePreviewSheet: View {
+    let capture: CaptureResult
+    let savedHere: Bool
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 24) {
+                    if let data = capture.thumbnailJPEG, let image = UIImage(data: data) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .clipShape(RoundedRectangle(cornerRadius: 18))
+                            .accessibilityLabel(capture.kind == .video ? "Video thumbnail" : "Photo preview")
+                    }
+                    Label(savedHere ? "Saved to Photos on this device" : "Preview only on this device",
+                          systemImage: savedHere ? "checkmark.circle" : "photo")
+                        .font(.headline)
+                    Text(savedHere
+                         ? "Open the Photos app to view, edit, or share the original."
+                         : "This is a small preview. Check the session’s save or download status for the original.")
+                        .foregroundStyle(.secondary)
+                    if capture.kind == .video {
+                        Text("Video playback is available in Photos after the original is saved.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
+                .multilineTextAlignment(.center)
+                .padding(24)
+                .frame(maxWidth: 600)
+                .frame(maxWidth: .infinity)
+            }
+            .navigationTitle("Last shot")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+        }
+    }
+}
+
+struct PendingSavesBanner: View {
+    let count: Int
+    let retry: () -> Void
+    @Environment(PhotoLibraryAccess.self) private var photoAccess
+
+    var body: some View {
+        if count > 0 {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("\(count) \(count == 1 ? "shot is" : "shots are") waiting to save", systemImage: "exclamationmark.triangle")
+                    .font(.subheadline.weight(.semibold))
+                Text("Keep this session open until your originals are saved.")
+                    .font(.footnote)
+                Button(photoAccess.isDenied ? "Open Settings" : "Retry saving") {
+                    if photoAccess.isDenied { photoAccess.openSettings() } else { retry() }
+                }
+                .buttonStyle(.bordered)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .foregroundStyle(.white)
+            .background(Theme.panelRaised, in: RoundedRectangle(cornerRadius: 16))
+        }
     }
 }

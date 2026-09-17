@@ -142,9 +142,11 @@ public struct CaptureResult: Codable, Sendable, Hashable, Identifiable {
     /// A small JPEG preview so the remote can show what was just shot even when it declined the file.
     public var thumbnailJPEG: Data?
     public var capturedAt: Date
+    /// Whether the camera saved this capture to Photos. nil when reported by an older peer.
+    public var savedOnCamera: Bool?
 
     public init(id: UUID = UUID(), kind: CaptureKind, byteCount: Int, willSendFile: Bool, fileAvailable: Bool = false,
-                fileName: String? = nil, duration: TimeInterval? = nil, thumbnailJPEG: Data? = nil, capturedAt: Date = Date()) {
+                fileName: String? = nil, duration: TimeInterval? = nil, thumbnailJPEG: Data? = nil, capturedAt: Date = Date(), savedOnCamera: Bool? = nil) {
         self.id = id
         self.kind = kind
         self.byteCount = byteCount
@@ -154,6 +156,7 @@ public struct CaptureResult: Codable, Sendable, Hashable, Identifiable {
         self.duration = duration
         self.thumbnailJPEG = thumbnailJPEG
         self.capturedAt = capturedAt
+        self.savedOnCamera = savedOnCamera
     }
 }
 

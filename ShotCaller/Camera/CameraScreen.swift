@@ -6,12 +6,13 @@ import SwiftUI
 @MainActor
 final class CameraStack {
     let model: CameraHostModel
+    let transport: any PeerTransport
     let preview: PreviewSource?
     let capture: CaptureService?
     let previewController = PreviewController()
 
     init() {
-        let transport = TransportFactory.make(displayName: DeviceIdentity.displayName)
+        transport = TransportFactory.make(displayName: DeviceIdentity.displayName)
         #if targetEnvironment(simulator)
         let device: any CameraDevice = SimulatedCameraDevice()
         preview = nil
@@ -39,6 +40,11 @@ struct CameraScreen: View {
     @State private var stack: CameraStack?
     @State private var showSettings = false
     @State private var confirmDisconnect = false
+    @State private var confirmClose = false
+    @State private var isClosing = false
+    @State private var previewCapture: CaptureResult?
+    @State private var lifecycleTask: Task<Void, Never>?
+    @Environment(\.scenePhase) private var scenePhase
     @State private var localTimer = 0
     @State private var zoomBase: CGFloat = 1
     @State private var pairingState = WiFiAwarePairingState()
@@ -58,16 +64,62 @@ struct CameraScreen: View {
         .persistentSystemOverlays(.hidden)
         .task {
             UIApplication.shared.isIdleTimerDisabled = true
-            if #available(iOS 26.0, *) { pairingState.start() }
             let stack = self.stack ?? CameraStack()
             self.stack = stack
+            stack.model.keepsCopies = UserDefaults.standard.object(forKey: SessionPreferences.keepsCopies) as? Bool ?? true
             await stack.model.start()
+            if !stack.model.usesCodePairing {
+                pairingState.start(transport: stack.transport, automaticallyFinishPairing: true)
+            }
             TransportFactory.markStarted()
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
-            if let stack {
-                Task { await stack.model.stop() }
+            pairingState.stop()
+            let pending = lifecycleTask
+            if let stack { Task { await pending?.value; await stack.model.stop() } }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            UIApplication.shared.isIdleTimerDisabled = phase == .active
+            guard let stack, !isClosing else { return }
+            let pending = lifecycleTask
+            lifecycleTask = Task {
+                await pending?.value
+                if phase == .background {
+                    pairingState.stop()
+                    await stack.model.suspend()
+                } else if phase == .active {
+                    photoAccess.refresh()
+                    await stack.model.resume()
+                    if photoAccess.isGranted && stack.model.keepsCopies {
+                        await stack.model.retrySavingCaptures()
+                    }
+                    if !stack.model.usesCodePairing {
+                        pairingState.start(transport: stack.transport, automaticallyFinishPairing: true)
+                    }
+                }
+            }
+        }
+        .confirmationDialog("Leave the camera?", isPresented: $confirmClose, titleVisibility: .visible) {
+            Button(hasUnsavedOriginals ? "Discard unsaved shots and leave" : "Finish and leave", role: .destructive) {
+                finishAndClose(discardUnsaved: hasUnsavedOriginals)
+            }
+            Button("Keep camera open", role: .cancel) { }
+        } message: {
+            Text(stack?.model.unsavedCaptureCount ?? 0 > 0
+                 ? "Shots waiting to save will be discarded. Retry saving before leaving to keep their originals."
+                 : (stack?.model.unsavedTransferCount ?? 0) > 0
+                 ? "Some originals are waiting to transfer and have no copy in this device’s Photos. Download them on the remote before leaving, or they will be discarded."
+                 : stack?.model.keepsCopies == false
+                 ? "Saving on this device is off. Stop recording and finish the remote’s download before leaving to keep the original. Leaving now can discard it."
+                 : "Recording will finish before the camera closes. The remote will disconnect.")
+        }
+        .overlay {
+            if isClosing {
+                ZStack {
+                    Color.black.opacity(0.8).ignoresSafeArea()
+                    ProgressView("Finishing your shot…").tint(.white).foregroundStyle(.white)
+                }
             }
         }
     }
@@ -99,31 +151,44 @@ struct CameraScreen: View {
             }
 
             if case .unavailable(let reason) = model.availability {
-                CameraUnavailableView(reason: reason, onClose: onClose)
+                CameraUnavailableView(reason: reason, onRetry: { Task { await model.retryCamera() } }, onClose: close)
             } else {
-                VStack(spacing: 0) {
-                    topBar(model)
-                    if photoAccess.isDenied {
-                        PhotoAccessWarning(access: photoAccess)
-                            .padding(.top, 12)
-                    }
-                    Spacer()
-                    if !model.link.isConnected, model.availability == .ready {
-                        if model.usesCodePairing {
-                            PairingCard(model: model)
-                                .padding(.bottom, 20)
-                        } else if #available(iOS 26.0, *), !pairingState.hasPaired {
-                            CameraPairButton()
-                                .padding(.bottom, 20)
+                GeometryReader { geometry in
+                    let wide = geometry.size.width > geometry.size.height
+                    VStack(spacing: 8) {
+                        topBar(model)
+                        if photoAccess.isDenied && model.keepsCopies {
+                            PhotoAccessWarning(access: photoAccess)
+                        }
+                        PendingSavesBanner(count: model.unsavedCaptureCount) {
+                            Task { await model.retrySavingCaptures() }
+                        }
+                        if wide {
+                            HStack(alignment: .bottom, spacing: 24) {
+                                ScrollView { pairingPanel(model) }.frame(maxWidth: 360)
+                                Spacer(minLength: 0)
+                                ScrollView {
+                                    VStack(spacing: 12) {
+                                        TransferBannerHost(transfer: model.outgoingTransfer)
+                                        bottomBar(model)
+                                    }
+                                }.frame(maxWidth: 300)
+                            }
+                        } else {
+                            ScrollView {
+                                VStack(spacing: 16) {
+                                    pairingPanel(model)
+                                    TransferBannerHost(transfer: model.outgoingTransfer)
+                                    bottomBar(model)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .frame(minHeight: max(0, geometry.size.height - 96), alignment: .bottom)
+                            }
                         }
                     }
-                    TransferBannerHost(transfer: model.outgoingTransfer)
-                        .padding(.bottom, 12)
-                    bottomBar(model)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 12)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 24)
 
                 if let seconds = state.countdown {
                     CountdownOverlay(seconds: seconds)
@@ -150,30 +215,94 @@ struct CameraScreen: View {
         .sheet(isPresented: $showSettings) {
             CameraSettingsSheet(model: model)
         }
+        .sheet(item: $previewCapture) { capture in
+            CapturePreviewSheet(capture: capture, savedHere: capture.savedOnCamera == true)
+        }
         .confirmationDialog("Disconnect the remote?", isPresented: $confirmDisconnect, titleVisibility: .visible) {
             Button("Disconnect", role: .destructive) { model.disconnectRemote() }
+        } message: {
+            Text(model.unsavedTransferCount > 0
+                 ? "Some originals have not been saved to Photos and are still waiting to transfer. Disconnecting will discard them. Finish downloading on the remote first to keep them."
+                 : "You can pair a remote again from the camera screen.")
+        }
+    }
+
+    @ViewBuilder
+    private func pairingPanel(_ model: CameraHostModel) -> some View {
+        if !model.link.isConnected, model.availability == .ready {
+            if model.usesCodePairing {
+                PairingCard(model: model)
+            } else if #available(iOS 26.0, *) {
+                VStack(spacing: 12) {
+                    if pairingState.isLoading {
+                        ProgressView("Checking paired devices…").tint(.white)
+                    } else if pairingState.isPairing {
+                        CameraPairButton()
+                            .onDisappear { pairingState.pairingControlDidDisappear() }
+                        Button("Done pairing") { pairingState.endPairing() }
+                            .buttonStyle(.bordered).tint(.white)
+                    } else {
+                        Label(pairingState.hasPaired ? "Ready for your remote" : "Pair a remote to connect", systemImage: "wifi")
+                            .font(.headline).foregroundStyle(.white)
+                        Text("Choose this camera on the paired remote, or pair another device.")
+                            .font(.footnote).foregroundStyle(Theme.inkMuted).multilineTextAlignment(.center)
+                        Button(pairingState.hasPaired ? "Pair another remote" : "Pair a remote") { pairingState.beginPairing() }
+                            .buttonStyle(.borderedProminent)
+                    }
+                    if let error = pairingState.error {
+                        Text(error).font(.footnote).foregroundStyle(.yellow)
+                    }
+                }
+                .padding(12)
+                .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 20))
+            }
         }
     }
 
     private func topBar(_ model: CameraHostModel) -> some View {
-        let state = model.state
-        return HStack(spacing: 10) {
-            ControlButton(systemImage: "xmark", label: "Close") { onClose() }
-            Spacer(minLength: 4)
+        HStack(spacing: 8) {
+            ControlButton(systemImage: "xmark", label: "Close camera") {
+                if model.state.isRecording || model.state.isBusy || model.unsavedCaptureCount > 0 || model.unsavedTransferCount > 0 {
+                    confirmClose = true
+                } else { close() }
+            }
+            Spacer(minLength: 0)
             linkPill(model)
-            Spacer(minLength: 4)
-            ControlButton(
-                systemImage: state.flash == .off ? "bolt.slash.fill" : (state.flash == .auto ? "bolt.badge.automatic.fill" : "bolt.fill"),
-                label: "Flash \(state.flash.rawValue)",
-                isActive: state.flash != .off,
-                isEnabled: model.capabilities.hasFlash
-            ) { model.perform(.setFlash(state.flash.next)) }
-            ControlButton(
-                systemImage: "arrow.triangle.2.circlepath.camera",
-                label: "Switch camera",
-                isEnabled: model.capabilities.hasFrontCamera && !state.isRecording
-            ) { model.perform(.setPosition(state.position.toggled)) }
+            Spacer(minLength: 0)
             ControlButton(systemImage: "gearshape.fill", label: "Settings") { showSettings = true }
+        }
+    }
+
+    private func close() {
+        finishAndClose(discardUnsaved: false)
+    }
+
+    private var hasUnsavedOriginals: Bool {
+        (stack?.model.unsavedCaptureCount ?? 0) > 0 || (stack?.model.unsavedTransferCount ?? 0) > 0
+    }
+
+    private func finishAndClose(discardUnsaved: Bool) {
+        guard !isClosing else { return }
+        isClosing = true
+        pairingState.stop()
+        let pending = lifecycleTask
+        Task {
+            await pending?.value
+            await stack?.model.suspend()
+            if let stack, stack.model.unsavedCaptureCount > 0, !discardUnsaved {
+                let model = stack.model
+                // Finishing a recording can discover a new save failure after Close was tapped.
+                // Keep its original until the person retries or explicitly chooses to discard it.
+                await model.resume()
+                if !model.usesCodePairing {
+                    pairingState.start(transport: stack.transport, automaticallyFinishPairing: true)
+                }
+                isClosing = false
+                confirmClose = true
+                return
+            }
+            await stack?.model.stop()
+            onClose()
         }
     }
 
@@ -198,22 +327,36 @@ struct CameraScreen: View {
     private func bottomBar(_ model: CameraHostModel) -> some View {
         let state = model.state
         return VStack(spacing: 18) {
-            ModeSwitch(mode: state.mode, canRecord: model.capabilities.canRecordVideo, isLocked: state.isRecording) {
+            ModeSwitch(mode: state.mode, canRecord: model.capabilities.canRecordVideo, isLocked: state.isRecording || state.isBusy || state.countdown != nil) {
                 model.perform(.setMode($0))
             }
-            HStack {
-                ControlButton(
-                    systemImage: "timer",
-                    label: "Timer",
-                    badge: localTimer == 0 ? nil : "\(localTimer)s",
-                    isActive: localTimer != 0
-                ) { localTimer = localTimer == 0 ? 3 : (localTimer == 3 ? 10 : 0) }
-                Spacer()
-                ShutterButton(look: .forState(state)) { shutter(model) }
-                Spacer()
-                CaptureThumbnail(result: model.lastCapture, size: 48)
+            HStack(spacing: 18) {
+                ControlButton(systemImage: state.flash == .off ? "bolt.slash.fill" : (state.flash == .auto ? "bolt.badge.automatic.fill" : "bolt.fill"),
+                              label: "Flash \(state.flash.rawValue)", isActive: state.flash != .off,
+                              isEnabled: model.capabilities.hasFlash && !state.isBusy) {
+                    model.perform(.setFlash(state.flash.next))
+                }
+                ControlButton(systemImage: "timer", label: "Timer",
+                              badge: localTimer == 0 ? "Off" : "\(localTimer)s", isActive: localTimer != 0,
+                              isEnabled: !state.isRecording && !state.isBusy) {
+                    localTimer = localTimer == 0 ? 3 : (localTimer == 3 ? 10 : 0)
+                }
+                ControlButton(systemImage: "arrow.triangle.2.circlepath.camera", label: "Switch camera",
+                              isEnabled: model.capabilities.hasFrontCamera && !state.isRecording && !state.isBusy) {
+                    model.perform(.setPosition(state.position.toggled))
+                    zoomBase = 1
+                }
             }
-            .padding(.horizontal, 8)
+            ShutterButton(look: .forState(state)) { shutter(model) }
+                .frame(maxWidth: .infinity)
+                .overlay(alignment: .trailing) {
+                    Button { previewCapture = model.lastCapture } label: {
+                        CaptureThumbnail(result: model.lastCapture, size: 48)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(model.lastCapture == nil)
+                    .accessibilityLabel("Preview last shot")
+                }
         }
         .frame(maxWidth: 520)
         .frame(maxWidth: .infinity)
@@ -270,6 +413,7 @@ private struct PairingCard: View {
 
 private struct CameraUnavailableView: View {
     let reason: String
+    let onRetry: () -> Void
     let onClose: () -> Void
 
     var body: some View {
@@ -285,6 +429,8 @@ private struct CameraUnavailableView: View {
                 Button("Open Settings") { UIApplication.shared.open(url) }
                     .buttonStyle(.borderedProminent)
             }
+            Button("Try again", action: onRetry)
+                .buttonStyle(.bordered).tint(.white)
             Button("Back") { onClose() }
                 .buttonStyle(.bordered)
                 .tint(.white)
@@ -309,7 +455,6 @@ private struct SimulatedPreview: View {
 private struct CameraSettingsSheet: View {
     @Bindable var model: CameraHostModel
     @AppStorage(DeviceIdentity.nicknameKey) private var nickname = ""
-    @AppStorage(TransportFactory.wifiAwarePreferenceKey) private var useWiFiAware = false
     @Environment(\.dismiss) private var dismiss
     @Environment(PhotoLibraryAccess.self) private var photoAccess
 
@@ -318,37 +463,28 @@ private struct CameraSettingsSheet: View {
             Form {
                 Section {
                     Toggle("Keep copies in Photos", isOn: $model.keepsCopies)
-                    Button {
-                        ExternalApp.openPhotos()
-                    } label: {
-                        Label("Open Photos", systemImage: "photo.on.rectangle.angled")
-                    }
                 } header: {
                     Text("This device")
                 } footer: {
                     if photoAccess.isDenied {
                         Text("Photos access is off, so nothing will be saved here until you allow it in Settings.")
                     } else {
-                        Text("Off means captures only exist on the remote (when it asks for them). Turn it off if this device is borrowed.")
+                        Text("When off, originals are kept only if the remote requests and saves them. Leave this on to keep your own copy. Saved originals are available in the Photos app.")
                     }
                 }
-                Section {
-                    LabeledContent("Code", value: model.pairingCode.digits)
-                    Button("Issue a new code") { model.regenerateCode() }
-                        .disabled(model.link.isConnected)
-                } header: {
-                    Text("Pairing")
-                } footer: {
-                    Text("A new code is issued automatically after three wrong guesses.")
-                }
-                if TransportFactory.wifiAwareSupported {
+                if model.usesCodePairing {
                     Section {
-                        Toggle("Use Wi-Fi Aware", isOn: $useWiFiAware)
-                    } header: {
-                        Text("Experimental")
-                    } footer: {
-                        Text("Connect over Wi‑Fi Aware instead of the default Bluetooth + Wi‑Fi. Both devices need iOS 26 and must be paired in the system pairing prompt. Applies next time you open the camera.")
+                        LabeledContent("Code", value: model.pairingCode.digits)
+                        Button("Issue a new code") { model.regenerateCode() }
+                            .disabled(model.link.isConnected)
+                    } header: { Text("Pairing") } footer: {
+                        Text("A new code is issued automatically after three wrong guesses.")
                     }
+                }
+                Section("Connection") {
+                    Text(model.usesCodePairing ? "Automatic · Bluetooth and Wi-Fi" : "Wi-Fi Aware")
+                    Text("To change the connection, close this session and choose the same option on both home screens.")
+                        .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section {
                     TextField("Nickname", text: $nickname)
@@ -366,6 +502,10 @@ private struct CameraSettingsSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+        }
+        .onChange(of: model.keepsCopies) { _, value in
+            UserDefaults.standard.set(value, forKey: SessionPreferences.keepsCopies)
+            if value { Task { await photoAccess.requestIfNeeded() } }
         }
         .presentationDetents([.medium, .large])
     }

@@ -25,6 +25,8 @@ targets:
       - path: ShotCaller
         excludes:
           - "Info.plist"
+      - path: docs/PRIVACY.md
+        buildPhase: resources
     dependencies:
       - package: ShotCallerCore
         product: ShotCallerCore

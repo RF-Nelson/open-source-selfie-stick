@@ -4,28 +4,31 @@
 # Shot Caller
 
 **Turn a second iPhone or iPad into a remote control for another one's camera.**<br>
-Controls work anywhere over Bluetooth — no Wi-Fi needed — and photos/video come back fast over Wi-Fi automatically when both devices can reach each other, or slowly over Bluetooth on demand when they can't.
+Control a nearby camera over Bluetooth without a shared Wi-Fi network. Photos and videos transfer over Wi-Fi automatically when available, or over Bluetooth on demand.
 
 <img src="https://img.shields.io/badge/platform-iOS%2018%2B-lightgrey.svg?style=flat" alt="iOS 18+"> <img src="https://img.shields.io/badge/swift-6-orange.svg?style=flat" alt="Swift 6"> <img src="https://img.shields.io/badge/license-MPL--2.0-lightgrey.svg?style=flat" alt="MPL 2.0">
 </div>
 
-> **Status:** version 2.0 is a from-scratch rebuild of the 2016 app *Open Source Selfie Stick* (kept at tag [`v1.0-legacy`](../../tree/v1.0-legacy)). The layered Bluetooth + Wi-Fi transport, pairing, capture and smart send-back are **working and verified on two physical devices (iOS 26)**. The remaining milestone is the iOS 26 **Wi-Fi Aware** path — see [Status](#status).
+> **Status:** version 2.0 rebuilds the 2016 app *Open Source Selfie Stick* (preserved at [`v1.0-legacy`](../../tree/v1.0-legacy)). The earlier Bluetooth + Wi-Fi implementation was verified on two physical devices running iOS 26. The current UX, permission, capture-recovery, and Wi-Fi Aware fixes still need a fresh physical-device acceptance run before release. See [Status](#status) and the [App Store release checklist](docs/APP_STORE_RELEASE.md).
 
 ## What it does
 
 - **Two roles.** Open the app on both devices. One becomes the **camera**, the other the **remote**.
-- **Pairing with a code.** The camera shows a 4-digit code; the remote types it in. No other device nearby can drive your camera, and the link is encrypted.
+- **Pairing you control.** Automatic connection uses a four-digit code shown on the camera. Optional Wi-Fi Aware uses Apple's system pairing on supported devices.
 - **Photos and video.** The remote switches modes, cycles the flash, flips between front and back cameras, starts a countdown the people in the shot can see on the camera's screen, takes the picture or starts and stops recording.
-- **Copies where you want them, smartly delivered.** The camera keeps its own copies (switchable). The remote can ask for full-resolution photos back (default on) and videos (default off — they're big). Every capture sends a small preview to the remote instantly either way. When a Wi-Fi lane is up, full files arrive in a second or two automatically; when you're on Bluetooth only, they're held and offered as a download (with a size/time warning and Full / Reduced / Small choices), and they flush automatically the moment a Wi-Fi lane appears.
-- **Modern camera.** HEIF photos at full sensor resolution, HEVC video with stabilization, horizon-level rotation handling, tap to focus, pinch to zoom, Camera Control / volume-button shutter on the camera device.
+- **Copies where you want them.** Choose whether the camera saves to Photos and whether the remote requests photos or videos. The paired remote receives small previews either way. Full files transfer automatically over a Wi-Fi path; on Bluetooth they wait for a download request with a size/time estimate and photo-size choices. Files waiting for transfer are queued automatically when Wi-Fi becomes available. Failed Photos saves can be retried while the session remains open.
+- **Camera controls.** HEIF photos and HEVC video where supported, stabilization, horizon-level rotation handling, tap to focus, pinch to zoom, and Camera Control / volume-button shutter on the camera device.
+- **Permissions explained.** Each role has a first-use setup with optional saving. The remote does not ask for Camera or Microphone. Privacy & Help includes an offline policy and support access.
 
 ## How it works
 
 1. Open Shot Caller on both devices and choose **Camera** on one, **Remote** on the other.
 2. On the remote, tap the camera in the list and enter the code on its screen.
-3. Shoot. Controls work over Bluetooth with no Wi-Fi at all. Full-resolution photos come back in a second or two when both devices share a Wi-Fi path; otherwise the remote shows a **Download** button (Bluetooth is slower).
+3. Shoot. Controls use Bluetooth; full files use a Wi-Fi path when available. Otherwise the remote offers a **Download** button (Bluetooth is slower). Keep both apps open while shooting and transferring.
 
-**The connection is layered and automatic.** Bluetooth is the always-on base — discovery, the 4-digit pairing, and controls work anywhere, even in Airplane Mode. When both devices can reach each other over Wi-Fi/AWDL, the app bootstraps a Wi-Fi "fast lane" over the Bluetooth link and uses it for file transfers; if that isn't available, files fall back to Bluetooth. There's no mode to pick — it detects reachability by trying. (This replaced a Multipeer-only design that couldn't connect off-network.) See [docs/TRANSPORT.md](docs/TRANSPORT.md).
+**Automatic connection layers Bluetooth and Wi-Fi.** Bluetooth handles discovery, code pairing, and controls. It must stay enabled, including when using Airplane Mode. When both devices can reach each other over Wi-Fi/AWDL, the app establishes a Wi-Fi path for files. Otherwise full copies can be downloaded over Bluetooth.
+
+**Wi-Fi Aware is optional.** On two supported devices running iOS/iPadOS 26 or later, turn on Wi-Fi Aware in the **Connection** section of both home screens before choosing roles. Open the camera's pairing control, then pair it on the remote using Apple's system prompt. This replaces the four-digit app code. The current implementation fixes the handoff between system pairing and data discovery; physical validation is still required. See [docs/TRANSPORT.md](docs/TRANSPORT.md).
 
 ## Building
 
@@ -47,7 +50,9 @@ cd Packages/ShotCallerCore && swift test
 
 They also run from Xcode's test navigator (the shared scheme includes them).
 
-To put a build on TestFlight for internal testers, run `Tools/testflight-upload.sh` (archives, signs and uploads; Xcode must be signed in to the developer account).
+To put a build on TestFlight for internal testers, run `Tools/testflight-upload.sh` (archives, signs and uploads; Xcode must be signed in to the developer account). Those internal-only builds cannot be submitted for App Review.
+
+For a public-release candidate, `Tools/app-store-archive.sh` creates a signed archive and App Store IPA locally without uploading. Complete [docs/APP_STORE_RELEASE.md](docs/APP_STORE_RELEASE.md) before distribution. [Privacy policy](docs/PRIVACY.md) · [Support](docs/SUPPORT.md).
 
 ## Architecture
 
@@ -66,28 +71,28 @@ Packages/ShotCallerCore/      everything that doesn't need a device — with tes
 Tools/render-icon.swift       draws the app icon (light, dark, tinted)
 ```
 
-- **Transport is a protocol.** Everything above the transport speaks `PeerTransport` and one `AsyncStream<TransportEvent>`. The default `LayeredTransport` composes a `BluetoothTransport` (Core Bluetooth over an L2CAP channel) with a `MultipeerTransport` "fast lane" it bootstraps over the Bluetooth link; `WiFiAwareTransport` (iOS 26) is an experimental opt-in; `FakeTransport` backs the tests. Only the concrete transports import their frameworks.
+- **Transport is a protocol.** Everything above the transport speaks `PeerTransport` and one `AsyncStream<TransportEvent>`. The default `LayeredTransport` composes a `BluetoothTransport` (Core Bluetooth over an L2CAP channel) with a `MultipeerTransport` Wi-Fi path it establishes over the Bluetooth link. `WiFiAwareTransport` (iOS 26) is an optional alternative; `FakeTransport` backs the tests. Only the concrete transports import their frameworks.
 - **The wire protocol is typed.** Remote → camera is `RemoteCommand`; camera → remote is `CameraEvent`. The camera sends a full `CameraState` snapshot whenever anything changes, and the remote renders from it. Every message carries a protocol version; mismatched versions refuse to talk with a clear message on both screens.
 - **Both role models are pure logic.** `CameraHostModel` and `RemoteModel` talk to a `PeerTransport`, a `CameraDevice` and a `MediaStore`; the app supplies AVFoundation, PhotoKit and Multipeer, the tests supply fakes. `EndToEndTests` drives a remote model against a camera model over two linked fake transports.
-- **Pairing.** The camera advertises a random per-session challenge. The remote's invitation carries `HMAC-SHA256(key: SHA256(code), challenge + remoteName)`. The camera verifies before accepting, allows one remote at a time, and issues a new code after three wrong guesses. The Multipeer session itself is encrypted. This keeps strangers with the app out; it is not designed to resist someone sniffing the local network with custom tooling.
+- **Pairing.** After a connection is established, the camera sends a random per-session challenge. The remote proves the code over the data channel using `HMAC-SHA256(key: SHA256(code), challenge + remoteName)`. The camera verifies before accepting commands, allows one remote at a time, and issues a new code after three wrong guesses. The code is intended to keep an ordinary nearby app user from controlling the camera; it is not designed to resist custom sniffing or attack tooling. Wi-Fi Aware instead relies on system-authorized pairing.
 - **Files, delivered by channel.** Full-resolution photos are the original HEIF/JPEG (metadata intact); videos are HEVC `.mov`. Delivery is decoupled from intent: over Wi-Fi they send automatically; over Bluetooth they're held and sent on request (photos can be re-encoded smaller — Full / Reduced / Small — for a quicker Bluetooth transfer), with live progress and cancel on both ends, and they flush automatically when a Wi-Fi lane appears. The receiver saves to Photos with add-only permission. Measured throughput: ~1.5 MB/s over the Wi-Fi lane vs ~28 KB/s over Bluetooth L2CAP.
 
 ## Status
 
-Done and **verified on two physical devices (iPhone 17 Pro Max + iPad, iOS 26)**:
+The earlier implementation was **verified on two physical devices (iPhone 17 Pro Max + iPad, iOS 26)** for:
 
-- **Layered transport** — Bluetooth control anywhere (works in Airplane Mode), with an automatic Wi-Fi fast lane for file transfer that self-heals after AWDL drops.
-- **Smart send-back** — instant thumbnails; auto-fast over Wi-Fi; defer + on-demand download (with size/time warning, Full/Reduced/Small compression, live progress, cancel) over Bluetooth; auto-flush when a Wi-Fi lane returns; a capture is never stranded if the lane drops mid-send.
-- Pairing, capture, photo/video, countdown, flash, front/back — all working on hardware.
-- Core package: **53 tests** (codec, pairing, both models, deferral/download flows, end-to-end). App builds for iOS device + Simulator SDKs under Swift 6 strict concurrency.
+- Bluetooth control with optional Wi-Fi file transfer, including recovery after Wi-Fi drops.
+- Previews, deferred Bluetooth downloads, photo compression, progress/cancel, and automatic delivery when Wi-Fi returns.
+- Code pairing, photo/video capture, countdown, flash, and front/back camera switching.
 
-Remaining milestones:
+Implemented since that hardware check:
 
-- **Wi-Fi Aware (iOS 26)** — the experimental opt-in transport isn't finished; getting it working is the next major piece. See [docs/TRANSPORT.md](docs/TRANSPORT.md).
-- First-run **permission onboarding** so the system prompts aren't a surprise (see [docs/TODO.md](docs/TODO.md)).
-- iPad layout pass, localisation, manual exposure, a session gallery.
+- First-use setup per role, optional saving preferences, clearer permission recovery, adaptive screen layouts, and capture previews that distinguish receipt from a successful save.
+- Wi-Fi Aware pairing/discovery handoff, reuse of the system-selected endpoint, and single-peer connection handling.
+- Capture/save recovery and transfer lifecycle fixes, with meaningful model and transport regression coverage in the core package.
+- Privacy manifest, bundled policy, release-only diagnostic privacy, and separate App Store archive tooling.
 
-See [docs/TODO.md](docs/TODO.md) for the pre-review checklist and open decisions (including licensing).
+These changes still require physical testing on supported phones/iPads, older supported OS versions, and Wi-Fi Aware-compatible devices. No App Store submission or approval is implied. See [docs/TODO.md](docs/TODO.md) and the [release acceptance matrix](docs/APP_STORE_RELEASE.md).
 
 ## History
 

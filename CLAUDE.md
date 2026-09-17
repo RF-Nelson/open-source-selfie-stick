@@ -2,7 +2,7 @@
 
 iOS app (SwiftUI, Swift 6, iOS 18+) that makes one iPhone/iPad a remote control for another's camera. Named "Shot Caller" (decided 2026-09-16; was "Pair & Shoot" from 2026-08-23, see `docs/DESIGN.md` § Name); bundle ID stays `com.richardnelson.opensourceselfiestick` (the 2016 App Store listing). Open source under MPL-2.0.
 
-**Status (2026-08-26):** the default **layered transport** (Bluetooth control everywhere + an automatic Wi-Fi fast lane for files) and **smart send-back** (defer over Bluetooth, auto-fast over Wi-Fi, on-demand download with compression + cancel, auto-flush + re-offer on lane changes) are **working and verified on two physical devices (iOS 26)**. Remaining milestones: **Wi-Fi Aware** (iOS 26 opt-in, unfinished), permission onboarding, and the open-source license decision (leaning keep MPL-2.0). Roadmap in `docs/TODO.md`; transport design in `docs/TRANSPORT.md`.
+**Status (2026-09-16):** the default layered Bluetooth + Wi-Fi transport was previously verified on physical devices. Wi-Fi Aware now preserves the selected endpoint, hands service ownership from pairing to connection, and tracks connection cancellation/readiness. Role-specific permission setup, save recovery, adaptive layouts, privacy/help, and App Store archive/export tooling are implemented. These changes still require a fresh physical-device acceptance run; SDK builds and core tests do not establish radio/UI behavior. See `docs/APP_STORE_RELEASE.md`, `docs/TODO.md`, and `docs/TRANSPORT.md`.
 
 ## Commands
 
