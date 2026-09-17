@@ -1,6 +1,6 @@
-# Pair & Shoot — notes for Claude Code
+# Shot Caller — notes for Claude Code
 
-iOS app (SwiftUI, Swift 6, iOS 18+) that makes one iPhone/iPad a remote control for another's camera. Named "Pair & Shoot" (decided 2026-08-23); bundle ID stays `com.richardnelson.opensourceselfiestick` (the 2016 App Store listing). Open source under MPL-2.0.
+iOS app (SwiftUI, Swift 6, iOS 18+) that makes one iPhone/iPad a remote control for another's camera. Named "Shot Caller" (decided 2026-09-16; was "Pair & Shoot" from 2026-08-23, see `docs/DESIGN.md` § Name); bundle ID stays `com.richardnelson.opensourceselfiestick` (the 2016 App Store listing). Open source under MPL-2.0.
 
 **Status (2026-08-26):** the default **layered transport** (Bluetooth control everywhere + an automatic Wi-Fi fast lane for files) and **smart send-back** (defer over Bluetooth, auto-fast over Wi-Fi, on-demand download with compression + cancel, auto-flush + re-offer on lane changes) are **working and verified on two physical devices (iOS 26)**. Remaining milestones: **Wi-Fi Aware** (iOS 26 opt-in, unfinished), permission onboarding, and the open-source license decision (leaning keep MPL-2.0). Roadmap in `docs/TODO.md`; transport design in `docs/TRANSPORT.md`.
 
@@ -8,16 +8,16 @@ iOS app (SwiftUI, Swift 6, iOS 18+) that makes one iPhone/iPad a remote control 
 
 - Generate the Xcode project (only after editing `project.yml`): `xcodegen generate`
 - Build (no simulator boot — this Mac has little RAM; never `simctl boot`):
-  `xcodebuild -project PairAndShoot.xcodeproj -scheme PairAndShoot -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build`
+  `xcodebuild -project ShotCaller.xcodeproj -scheme ShotCaller -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build`
 - Device build: same with `-sdk iphoneos -destination 'generic/platform=iOS'`
-- Tests (fast, native macOS, no simulator): `cd Packages/PairAndShootCore && swift test`
+- Tests (fast, native macOS, no simulator): `cd Packages/ShotCallerCore && swift test`
 - TestFlight upload (archive + upload, internal testing only): `Tools/testflight-upload.sh` — Xcode must be signed in to richfnelson@gmail.com; the internal group "App Store Connect Users" gets Xcode builds automatically
 - Icon: `swift Tools/render-icon.swift` (writes the three appearances into the asset catalog and `docs/icon.png`)
 
 ## Layout
 
-- `Packages/PairAndShootCore` — all logic, no UI, no AVFoundation. Protocol (`Messages.swift`), pairing, `PeerTransport` and its implementations (`LayeredTransport` — the default: Bluetooth control + auto Wi-Fi fast lane; `BluetoothTransport` + `L2CAPStreamHandler`; `MultipeerTransport`; `WiFiAwareTransport`; `FakeTransport`), `CameraHostModel`, `RemoteModel`. Transport architecture in `docs/TRANSPORT.md`. Tests here.
-- `PairAndShoot/` — the app. `Camera/CaptureService.swift` is the AVFoundation actor; `Camera/CameraScreen.swift` and `Remote/RemoteScreen.swift` are the two operating screens; `Design/` holds the theme and shared controls.
+- `Packages/ShotCallerCore` — all logic, no UI, no AVFoundation. Protocol (`Messages.swift`), pairing, `PeerTransport` and its implementations (`LayeredTransport` — the default: Bluetooth control + auto Wi-Fi fast lane; `BluetoothTransport` + `L2CAPStreamHandler`; `MultipeerTransport`; `WiFiAwareTransport`; `FakeTransport`), `CameraHostModel`, `RemoteModel`. Transport architecture in `docs/TRANSPORT.md`. Tests here.
+- `ShotCaller/` — the app. `Camera/CaptureService.swift` is the AVFoundation actor; `Camera/CameraScreen.swift` and `Remote/RemoteScreen.swift` are the two operating screens; `Design/` holds the theme and shared controls.
 - `docs/DESIGN.md` — product, naming, visual system, screen behaviour.
 
 ## Conventions

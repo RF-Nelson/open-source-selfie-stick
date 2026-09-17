@@ -1,5 +1,5 @@
 #!/bin/sh
-# Install a Debug build of Pair & Shoot on a USB-connected iPhone/iPad and stream the logs that
+# Install a Debug build of Shot Caller on a USB-connected iPhone/iPad and stream the logs that
 # matter for peer-to-peer pairing (our transport + MultipeerConnectivity + AWDL/Bluetooth).
 #
 # Prereqs: the device connected by cable and "trusted"; Xcode signed in to the developer account;
@@ -19,15 +19,15 @@ fi
 echo "Device: $DEV_ID"
 
 if [ "${1:-}" != "--logs" ]; then
-  OUT="${TMPDIR:-/tmp}/PairAndShoot-debug"
+  OUT="${TMPDIR:-/tmp}/ShotCaller-debug"
   rm -rf "$OUT"; mkdir -p "$OUT"
   echo "Building Debug for device…"
-  xcodebuild -project PairAndShoot.xcodeproj -scheme PairAndShoot -configuration Debug \
+  xcodebuild -project ShotCaller.xcodeproj -scheme ShotCaller -configuration Debug \
     -destination "id=$DEV_ID" -derivedDataPath "$OUT" -allowProvisioningUpdates build
   APP=$(find "$OUT/Build/Products/Debug-iphoneos" -maxdepth 1 -name '*.app' | head -1)
   echo "Installing $APP…"
   xcrun devicectl device install app --device "$DEV_ID" "$APP"
 fi
 
-echo "Streaming logs. Open Pair & Shoot on BOTH phones and try to pair. Ctrl-C to stop."
-idevicesyslog 2>/dev/null | grep -iE 'pairandshoot|MCSession|Multipeer|MCNearby|awdl|com.apple.p2p|bluetooth|GCK' 
+echo "Streaming logs. Open Shot Caller on BOTH phones and try to pair. Ctrl-C to stop."
+idevicesyslog 2>/dev/null | grep -iE 'shotcaller|MCSession|Multipeer|MCNearby|awdl|com.apple.p2p|bluetooth|GCK' 

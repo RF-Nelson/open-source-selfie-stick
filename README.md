@@ -1,7 +1,7 @@
 <div align="center">
-<img src="docs/icon.png" width="128" alt="Pair &amp; Shoot icon"><br><br>
+<img src="docs/icon.png" width="128" alt="Shot Caller icon"><br><br>
 
-# Pair &amp; Shoot
+# Shot Caller
 
 **Turn a second iPhone or iPad into a remote control for another one's camera.**<br>
 Controls work anywhere over Bluetooth — no Wi-Fi needed — and photos/video come back fast over Wi-Fi automatically when both devices can reach each other, or slowly over Bluetooth on demand when they can't.
@@ -21,7 +21,7 @@ Controls work anywhere over Bluetooth — no Wi-Fi needed — and photos/video c
 
 ## How it works
 
-1. Open Pair &amp; Shoot on both devices and choose **Camera** on one, **Remote** on the other.
+1. Open Shot Caller on both devices and choose **Camera** on one, **Remote** on the other.
 2. On the remote, tap the camera in the list and enter the code on its screen.
 3. Shoot. Controls work over Bluetooth with no Wi-Fi at all. Full-resolution photos come back in a second or two when both devices share a Wi-Fi path; otherwise the remote shows a **Download** button (Bluetooth is slower).
 
@@ -34,7 +34,7 @@ Requirements: Xcode 26, an iOS 18+ device for each role (the Simulator has no ca
 ```sh
 git clone https://github.com/RF-Nelson/open-source-selfie-stick.git
 cd open-source-selfie-stick
-open PairAndShoot.xcodeproj      # select your team under Signing & Capabilities, then run on a device
+open ShotCaller.xcodeproj      # select your team under Signing & Capabilities, then run on a device
 ```
 
 The project file is generated from `project.yml` with [XcodeGen](https://github.com/yonaskolb/XcodeGen) and committed, so you don't need XcodeGen unless you change `project.yml` (`brew install xcodegen && xcodegen generate`).
@@ -42,7 +42,7 @@ The project file is generated from `project.yml` with [XcodeGen](https://github.
 Tests live in the Swift package and run without a simulator:
 
 ```sh
-cd Packages/PairAndShootCore && swift test
+cd Packages/ShotCallerCore && swift test
 ```
 
 They also run from Xcode's test navigator (the shared scheme includes them).
@@ -52,12 +52,12 @@ To put a build on TestFlight for internal testers, run `Tools/testflight-upload.
 ## Architecture
 
 ```
-PairAndShoot/                 the app (SwiftUI, iOS 18+)
+ShotCaller/                   the app (SwiftUI, iOS 18+)
 ├─ App/                       entry point, role picker, device naming
 ├─ Design/                    theme and shared controls (shutter, mode switch, pills, banners)
 ├─ Camera/                    CaptureService (AVFoundation actor), preview view, PhotoKit store, camera screen
 └─ Remote/                    remote screen, code entry
-Packages/PairAndShootCore/    everything that doesn't need a device — with tests
+Packages/ShotCallerCore/      everything that doesn't need a device — with tests
 ├─ Protocol/                  RemoteCommand / CameraEvent (Codable, versioned) and the JSON codec
 ├─ Pairing/                   pairing code, per-session challenge, HMAC proof
 ├─ Transport/                 PeerTransport protocol; LayeredTransport (default), BluetoothTransport + L2CAPStreamHandler, MultipeerTransport, WiFiAwareTransport, FakeTransport

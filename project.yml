@@ -1,5 +1,5 @@
 # XcodeGen spec. Regenerate the project with:  xcodegen generate
-name: PairAndShoot
+name: ShotCaller
 options:
   bundleIdPrefix: com.richardnelson
   deploymentTarget:
@@ -8,8 +8,8 @@ options:
   createIntermediateGroups: true
   developmentLanguage: en
 packages:
-  PairAndShootCore:
-    path: Packages/PairAndShootCore
+  ShotCallerCore:
+    path: Packages/ShotCallerCore
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -17,19 +17,19 @@ settings:
     CODE_SIGN_STYLE: Automatic
     ENABLE_USER_SCRIPT_SANDBOXING: "YES"
 targets:
-  PairAndShoot:
+  ShotCaller:
     type: application
     platform: iOS
     deploymentTarget: "18.0"
     sources:
-      - path: PairAndShoot
+      - path: ShotCaller
         excludes:
           - "Info.plist"
     dependencies:
-      - package: PairAndShootCore
-        product: PairAndShootCore
+      - package: ShotCallerCore
+        product: ShotCallerCore
     entitlements:
-      path: PairAndShoot/PairAndShoot.entitlements
+      path: ShotCaller/ShotCaller.entitlements
       properties:
         com.apple.developer.wifi-aware:
           - Publish
@@ -37,8 +37,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.richardnelson.opensourceselfiestick
-        PRODUCT_NAME: PairAndShoot
-        INFOPLIST_FILE: PairAndShoot/Info.plist
+        PRODUCT_NAME: ShotCaller
+        INFOPLIST_FILE: ShotCaller/Info.plist
         GENERATE_INFOPLIST_FILE: "YES"
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
         INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
@@ -53,4 +53,4 @@ targets:
         SUPPORTS_MACCATALYST: "NO"
     scheme:
       testTargets:
-        - package: PairAndShootCore/PairAndShootCoreTests
+        - package: ShotCallerCore/ShotCallerCoreTests

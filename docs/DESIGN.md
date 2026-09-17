@@ -1,4 +1,4 @@
-# Pair & Shoot — design notes
+# Shot Caller — design notes
 
 ## What the product is
 
@@ -15,13 +15,15 @@ Principles, in priority order:
 
 ## Name
 
-**Pair & Shoot** — decided 23 August 2026. A riff on *point and shoot* that literally describes the flow: pair the two devices, then shoot. It's short enough not to truncate under the icon, says "camera", and implies "two devices" — the two things the 2016 name failed to say.
+**Shot Caller** — decided 16 September 2026, replacing *Pair & Shoot* (23 August 2026). Whoever holds the remote calls the shot from wherever they're standing, including inside the frame. *Pair & Shoot* named the setup steps (pair, then shoot) and read as a pun on "point and shoot", a kind of camera, so it never said what the app is for. *Shot Caller* is 11 characters (no truncation under the icon), says "shot", and puts the person in control of the camera rather than behind it.
 
-Where the name lives: `CFBundleDisplayName` in `Info.plist`, the target / folder / module `PairAndShoot`, the role picker title, the Bonjour service type `pairandshoot`, and these docs. The bundle ID stays `com.richardnelson.opensourceselfiestick` so the 2016 App Store listing carries over; the GitHub repository can keep its old name (GitHub redirects renamed repositories) or be renamed to `pair-and-shoot` whenever convenient.
+Name check (16 September 2026, US App Store search): nothing in Photo & Video uses it. The near-matches are all in other categories: *ShotCaller Basketball* (Sports), *Shot Caller: Muay Thai Timer* (Health & Fitness), *Shotcallers* (Business) and *SHOTCALLER - Shot List Planner* (Productivity, the closest in spirit). The phrase also has a slang sense (a gang leader, and the 2017 film); the app leans on the everyday one, the person in charge.
 
-App Store metadata: title *Pair & Shoot*, subtitle *Remote shutter for two iPhones* (exactly 30 characters). Apple's own Watch app **Camera Remote** does this job with a Watch; the pitch here is the same idea with any second iPhone or iPad, plus video and copies sent back.
+Where the name lives: `CFBundleDisplayName` and the usage strings in `Info.plist`, the target / folder / module `ShotCaller`, the package `ShotCallerCore`, the role picker title and the remote's empty-state hint, the Bonjour / Multipeer / Wi-Fi Aware service type `shotcaller`, the pairing tag `Pairing.appTag`, the filename given to saved photos, and these docs. Because the service type and pairing tag changed, a build from before the rename can't pair with one after it. The bundle ID stays `com.richardnelson.opensourceselfiestick` so the 2016 App Store listing carries over; the App Store Connect record is renamed in App Store Connect itself (an unreleased rename needs no new build). The GitHub repository can keep its old name (GitHub redirects renamed repositories) or be renamed to `shot-caller` whenever convenient.
 
-Considered and set aside: *Snap Remote* (Snapchat association), *Second Shooter* (photographers' jargon that doesn't say "remote"), *Shutter Link* (bland), *Camera Clicker* (truncates under the icon), *Remote Shutter* (generic, several existing apps, and it collides with Apple's *Camera Remote*).
+App Store metadata: title *Shot Caller*, subtitle *Remote shutter for two iPhones* (exactly 30 characters). Apple's own Watch app **Camera Remote** does this job with a Watch; the pitch here is the same idea with any second iPhone or iPad, plus video and copies sent back.
+
+Considered and set aside: *Pair & Shoot* (the name from 23 August to 16 September 2026; described the setup, not the benefit), *In the Shot* (the runner-up; says the benefit plainly but not the control), *Long Arm* (nods to the 2016 selfie stick but doesn't say camera), *Get In!* (could be a ride app), *Snap Remote* (Snapchat association), *Second Shooter* (photographers' jargon that doesn't say "remote"), *Shutter Link* (bland), *Camera Clicker* (truncates under the icon), *Remote Shutter* (generic, several existing apps, and it collides with Apple's *Camera Remote*).
 
 ## Visual system
 

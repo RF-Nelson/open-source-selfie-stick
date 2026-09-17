@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>Shot Caller</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_shotcaller._tcp</string>
+		<string>_shotcaller._udp</string>
+	</array>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Shot Caller uses Bluetooth to connect the remote and camera when they aren't on the same Wi‑Fi network.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Shot Caller uses the camera to take the photos and videos you ask for from the paired remote.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Shot Caller finds the other iPhone or iPad and sends it commands and photos over your local network.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>The microphone records sound for your videos.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Photos and videos are saved to your library. The app never reads your existing photos.</string>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>WiFiAwareServices</key>
+	<dict>
+		<key>_shotcaller._udp</key>
+		<dict>
+			<key>Publishable</key>
+			<dict/>
+			<key>Subscribable</key>
+			<dict/>
+		</dict>
+	</dict>
+</dict>
+</plist>

@@ -1,7 +1,7 @@
 # Networking & transport
 
-Pair & Shoot connects the two devices with a **layered transport** (`LayeredTransport` in
-`PairAndShootCore`), behind the `PeerTransport` protocol. **Bluetooth (Core Bluetooth) is the
+Shot Caller connects the two devices with a **layered transport** (`LayeredTransport` in
+`ShotCallerCore`), behind the `PeerTransport` protocol. **Bluetooth (Core Bluetooth) is the
 always-on primary** — discovery, the 4-digit pairing, control, and a slow file fallback — and once
 it connects, the two devices bootstrap a **Multipeer (Wi-Fi/AWDL) "fast lane"** over the Bluetooth
 link and route full-resolution file transfers across it whenever they're reachable (same network).
@@ -106,7 +106,7 @@ That OS limitation drove the Core Bluetooth primary + Wi-Fi fast lane design abo
 
 Verified against the iOS 26.5 SDK (`WiFiAware` + the new Swift `Network` API). Entitlement
 `com.apple.developer.wifi-aware` (values `Publish`,`Subscribe`) is self-serve (no Apple approval),
-enabled on the App ID; `WiFiAwareServices` declared in Info.plist (`_pairandshoot._udp`).
+enabled on the App ID; `WiFiAwareServices` declared in Info.plist (`_shotcaller._udp`).
 
 **Data channel.** Use the new Swift Network API with a Codable message protocol — no manual framing:
 

@@ -82,7 +82,7 @@ func render(_ variant: Variant, size: Int, to url: URL) throws {
 }
 
 let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-let iconSet = root.appendingPathComponent("PairAndShoot/Assets.xcassets/AppIcon.appiconset")
+let iconSet = root.appendingPathComponent("ShotCaller/Assets.xcassets/AppIcon.appiconset")
 for variant in variants {
     try render(variant, size: 1024, to: iconSet.appendingPathComponent(variant.fileName))
     print("wrote \(variant.fileName)")
