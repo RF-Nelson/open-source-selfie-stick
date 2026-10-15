@@ -12,6 +12,9 @@ import Testing
             .startRecording(sendBack: false, delay: 0),
             .stopRecording, .cancelCountdown,
             .setMode(.video), .setPosition(.front), .setFlash(.auto), .ping,
+            .requestFile(id: UUID(), quality: .medium), .cancelTransfer(id: UUID()),
+            .startPreview(PreviewRequest(maxEdge: 320, maxFPS: 2, maxBytes: 9000)), .stopPreview(id: UUID()),
+            .setSendBack(SendBackPreferences(photos: true, videos: false)),
         ]
         for command in commands {
             let decoded = try codec.decode(try codec.encode(.command(command)))
@@ -28,6 +31,8 @@ import Testing
             .state(CameraState(mode: .video, position: .front, flash: .on, isRecording: true, recordingDuration: 12.5, countdown: 2, isBusy: true, keepsCopies: false)),
             .captureFinished(result),
             .captureFailed(reason: "nope"), .rejected(reason: "version"), .pong,
+            .previewStarted(PreviewSubscription(maxEdge: 480, fps: 5, maxBytes: 32768)),
+            .previewRefused(requestID: UUID(), reason: "hot"), .previewEnded(id: UUID(), reason: nil), .previewEnded(id: UUID(), reason: "bye"),
         ]
         for event in events {
             let decoded = try codec.decode(try codec.encode(.event(event)))

@@ -13,6 +13,7 @@ enum SessionPreferences {
     static let keepsCopies = "cameraKeepsCopies"
     static let sendsPhotos = "remoteSendsPhotos"
     static let sendsVideos = "remoteSendsVideos"
+    static let livePreview = "remoteLivePreview"
 }
 
 struct RootView: View {
@@ -46,7 +47,6 @@ struct RootView: View {
                 }
             }
             .task {
-                TransportFactory.recoverIfWiFiAwareCrashed()
                 photoAccess.refresh()
             }
             .onChange(of: scenePhase) { _, phase in
@@ -83,16 +83,16 @@ private struct RoleSetupView: View {
                     Text(role == .camera ? "Ready for your close-up." : "Get everyone in the shot.")
                         .font(.largeTitle.bold())
                     Text(role == .camera
-                         ? "This device takes the photos. Set it somewhere steady, then connect a remote or use its shutter yourself."
-                         : "Choose Camera on the other device. This device controls its shutter and can save copies of your shots.")
+                         ? "This device takes photos and videos. Set it somewhere steady and connect a remote; the viewfinder and shutter appear once a remote is connected. When both devices share a Wi-Fi network, the remote can see a live view of what this camera sees."
+                         : "Choose Camera on the other device. This device controls its shutter, shows a live view when both devices share a Wi-Fi network, and can save copies of your shots.")
                         .foregroundStyle(.secondary)
                     VStack(alignment: .leading, spacing: 16) {
                         if role == .camera {
                             Label("Allow Camera to show the viewfinder and take photos. Microphone access is requested when you record video.", systemImage: "camera")
                         }
-                        Label(TransportFactory.wifiAwareEnabled
-                              ? "Apple’s pairing prompt connects your devices over Wi-Fi Aware. Choose Wi-Fi Aware on both devices."
-                              : "Allow Bluetooth to connect nearby devices. Local Network access helps send photos and videos faster over Wi-Fi.",
+                        Label(usesInternalWiFiAware
+                              ? "Internal test: Apple’s pairing prompt connects your devices over Wi-Fi Aware. Both test devices need the test mode on."
+                              : "Allow Bluetooth to connect nearby devices. Local Network access allows faster photo and video transfers over a shared Wi-Fi network.",
                               systemImage: "antenna.radiowaves.left.and.right")
                         Label("Your shots go directly between the devices you pair. No account is needed.", systemImage: "lock.shield")
                     }
@@ -125,6 +125,14 @@ private struct RoleSetupView: View {
             }
         }
         .interactiveDismissDisabled(isPreparing)
+    }
+
+    private var usesInternalWiFiAware: Bool {
+        #if DEBUG
+        TransportFactory.internalWiFiAwareEnabled
+        #else
+        false
+        #endif
     }
 
     private func prepare() {

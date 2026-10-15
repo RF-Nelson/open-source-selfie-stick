@@ -7,7 +7,8 @@ import Foundation
 /// someone else's camera. The proof below binds the code to a per-session challenge and to the
 /// remote's name, the camera allows one remote at a time, and it issues a fresh code after
 /// `CameraHostModel.maxFailedAttempts` wrong guesses. It is not designed to resist an attacker
-/// sniffing the local network with custom Multipeer tooling; the session itself is encrypted.
+/// sniffing the link with custom tooling (the Multipeer session is encrypted; the Bluetooth L2CAP
+/// channel is not, see README § Pairing).
 public struct PairingCode: Hashable, Sendable {
     public static let length = 4
     public let digits: String
@@ -66,7 +67,7 @@ public enum Pairing {
     }
 
     /// What the camera advertises. Small and non-secret; the security handshake happens over the
-    /// encrypted data channel after connecting, so this may be dropped (e.g. over Bluetooth) without
+    /// data channel after connecting, so this may be dropped (e.g. over Bluetooth) without
     /// breaking pairing — it only helps the remote recognise a compatible camera.
     public static func advertisingInfo() -> [String: String] {
         [Keys.app: appTag, Keys.version: String(WireProtocol.version)]

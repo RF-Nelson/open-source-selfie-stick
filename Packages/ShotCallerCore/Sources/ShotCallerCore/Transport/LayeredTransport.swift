@@ -13,6 +13,7 @@ public final class LayeredTransport: PeerTransport, @unchecked Sendable {
     public let localPeer: Peer
     public let events: AsyncStream<TransportEvent>
     public var supportsFileTransfer: Bool { true }   // BLE always; Wi-Fi accelerates when reachable
+    public var supportsPreviewChannel: Bool { true }  // the Wi-Fi fast lane, while it is up
 
     private let continuation: AsyncStream<TransportEvent>.Continuation
     private let ble: any PeerTransport
@@ -20,8 +21,9 @@ public final class LayeredTransport: PeerTransport, @unchecked Sendable {
     private let lock = NSLock()
 
     private enum Role { case none, camera, remote }
-    /// First byte of every BLE message payload: the app's own bytes vs. our internal control.
-    private enum Lane: UInt8 { case app = 0, control = 1 }
+    /// First byte of every message payload on either leg: the app's own bytes, our internal control,
+    /// or a live-view packet. Preview rides the Wi-Fi leg only; on Bluetooth it is ignored.
+    private enum Lane: UInt8 { case app = 0, control = 1, preview = 2 }
     /// The one internal control message: the camera hands the remote the Wi-Fi rendezvous token.
     private struct Control: Codable { let token: String }
     /// Key under which the token travels in the Multipeer discovery info + invitation context.
@@ -104,6 +106,14 @@ public final class LayeredTransport: PeerTransport, @unchecked Sendable {
         wifi.cancelFileSend()
     }
 
+    /// Live-view packets ride the Wi-Fi leg only. With the fast lane down this throws rather than
+    /// touching Bluetooth: a 30 KB frame would hold the control lane for a second.
+    public func sendPreview(_ packet: Data, to peer: Peer) throws {
+        let (up, wifiPeer, primary) = lock.withLock { (wifiUp, self.wifiPeer, primaryPeer) }
+        guard up, let wifiPeer, primary?.id == peer.id else { throw TransportError.notConnected }
+        try wifi.send(laned(.preview, packet), to: [wifiPeer])
+    }
+
     public func disconnect() {
         ble.disconnect()
         teardownWiFi()
@@ -138,6 +148,8 @@ public final class LayeredTransport: PeerTransport, @unchecked Sendable {
             continuation.yield(.message(body, from: peer))
         case .control:
             handleControl(body)
+        case .preview:
+            break   // never carried over Bluetooth
         }
     }
 
@@ -247,9 +259,15 @@ public final class LayeredTransport: PeerTransport, @unchecked Sendable {
             continuation.yield(.fileReceived(name: name, url: url, from: primary))
         case .fileReceiveProgress, .fileReceiveFailed, .fileSendProgress, .fileSendFinished:
             continuation.yield(event)   // a file arrived/left over the authenticated fast lane
+        case .message(let data, let peer):
+            // The only messages on the Wi-Fi leg are live-view packets, surfaced under the primary
+            // (Bluetooth-authenticated) identity. Anything else, or from a stale leg, is dropped.
+            guard let primary = lock.withLock({ wifiPeer?.id == peer.id ? primaryPeer : nil }),
+                  data.first == Lane.preview.rawValue else { return }
+            continuation.yield(.preview(Data(data.dropFirst()), from: primary))
         case .failure(let message):
             Trace.log("layered: Wi-Fi leg reported \(message)")   // optional leg; never surface
-        case .connecting, .message, .peerLost, .fileChannelFast:
+        case .connecting, .peerLost, .fileChannelFast, .preview:
             break
         }
     }

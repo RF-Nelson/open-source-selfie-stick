@@ -72,11 +72,22 @@ public protocol CameraDevice: AnyObject, Sendable {
     func recordingHasFinished() async -> Bool
     /// The recording in progress has no audio track because the microphone isn't allowed.
     func isRecordingWithoutSound() async -> Bool
+    /// Live view: whether this device can produce small frames of the current scene.
+    var supportsPreviewFrames: Bool { get }
+    /// Attach (or detach) the frame tap. Enabled only while a remote holds a live-view subscription,
+    /// so an idle camera never pays for it. Idempotent.
+    func setPreviewFramesEnabled(_ enabled: Bool) async throws
+    /// The next frame of the scene as an upright JPEG no longer than `maxEdge` on its long side and no
+    /// larger than `maxBytes`; nil when none arrives in time or none fits. Called once per request.
+    func previewFrame(maxEdge: Int, maxBytes: Int) async -> PreviewFrame?
 }
 
 public extension CameraDevice {
     func recordingHasFinished() async -> Bool { false }
     func isRecordingWithoutSound() async -> Bool { false }
+    var supportsPreviewFrames: Bool { false }
+    func setPreviewFramesEnabled(_ enabled: Bool) async throws {}
+    func previewFrame(maxEdge: Int, maxBytes: Int) async -> PreviewFrame? { nil }
 }
 
 /// Produces the small JPEG previews that travel inside `CaptureResult`, and re-encodes photos smaller
@@ -117,6 +128,11 @@ public final class FakeCameraDevice: CameraDevice, @unchecked Sendable {
     private var _startError: CameraDeviceError?
     private var _captureError: CameraDeviceError?
     private var _microphoneDenied = false
+    private var _previewFramesEnabled = false
+    private var _previewFramesServed = 0
+    private var _previewFrameBytes = 1024
+    private var _previewEnableError: CameraDeviceError?
+    private var _previewEnableDelay: Duration = .zero
 
     public init(capabilities: CameraCapabilities = CameraCapabilities(hasFlash: true, hasFrontCamera: true, canRecordVideo: true)) {
         _capabilities = capabilities
@@ -129,6 +145,35 @@ public final class FakeCameraDevice: CameraDevice, @unchecked Sendable {
     public func failStart(with error: CameraDeviceError?) { lock.withLock { _startError = error } }
     public func failCapture(with error: CameraDeviceError?) { lock.withLock { _captureError = error } }
     public func denyMicrophone(_ denied: Bool = true) { lock.withLock { _microphoneDenied = denied } }
+
+    // Live view: the fake supports frames when its capabilities say so, and reports what was asked.
+    public var supportsPreviewFrames: Bool { lock.withLock { _capabilities.canStreamPreview } }
+    public var previewFramesEnabled: Bool { lock.withLock { _previewFramesEnabled } }
+    public var previewFramesServed: Int { lock.withLock { _previewFramesServed } }
+    /// Size of the fake JPEG the next frames carry; larger than `maxBytes` makes the frame "not fit".
+    public func setPreviewFrameBytes(_ count: Int) { lock.withLock { _previewFrameBytes = count } }
+    public func failPreviewEnable(with error: CameraDeviceError?) { lock.withLock { _previewEnableError = error } }
+    /// Makes enabling/disabling the tap take a while, as a session reconfiguration does.
+    public func setPreviewEnableDelay(_ delay: Duration) { lock.withLock { _previewEnableDelay = delay } }
+
+    public func setPreviewFramesEnabled(_ enabled: Bool) async throws {
+        if enabled, let error = lock.withLock({ _previewEnableError }) { throw error }
+        let delay = lock.withLock { _previewEnableDelay }
+        if delay > .zero { try? await Task.sleep(for: delay) }
+        lock.withLock { _previewFramesEnabled = enabled }
+    }
+
+    public func previewFrame(maxEdge: Int, maxBytes: Int) async -> PreviewFrame? {
+        let (enabled, bytes) = lock.withLock { () -> (Bool, Int) in
+            guard _previewFramesEnabled else { return (false, 0) }
+            _previewFramesServed += 1
+            return (true, _previewFrameBytes)
+        }
+        guard enabled, bytes <= maxBytes else { return nil }
+        // Shaped like a JPEG (SOI … EOI) so a remote's validation accepts it.
+        let body = Data(repeating: 0xAB, count: max(0, bytes - 4))
+        return PreviewFrame(jpeg: Data([0xFF, 0xD8]) + body + Data([0xFF, 0xD9]), width: maxEdge, height: maxEdge * 3 / 4)
+    }
 
     public func start() async throws -> CameraCapabilities {
         if let error = lock.withLock({ _startError }) { throw error }

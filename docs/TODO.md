@@ -4,8 +4,9 @@ What's left before (and around) an App Store submission. Keep this current; dele
 
 ## Release milestone: physical validation
 
-**Where things stand (2026-09-17, master @ 719c0e9, pushed).** TestFlight internal build
-`202609170310` contains Codex's release pass (478f384) plus the review fixes (719c0e9).
+**Where things stand (2026-10-12).** TestFlight internal build `202610121205` (uploaded 2026-10-12 from
+the uncommitted working tree) contains everything through the live view and its Codex review; the previous
+build `202609170310` had Codex's release pass (478f384) plus the review fixes (719c0e9).
 *Verified:* 78 core tests pass; device-SDK build succeeds; archive, export and upload succeeded.
 *Not verified:* anything on hardware — no radio, permission-prompt, capture or layout behaviour from
 either commit has run on a device. Record results against the matrix in
@@ -21,7 +22,13 @@ either commit has run on a device. Record results against the matrix in
 5. Deny Photos on each role: shot is kept as "unsaved", retry after granting in Settings.
 6. Close the camera mid-recording and with unsaved shots: warning, then the recording is saved.
 7. iPad + landscape + Larger Text pass over both screens.
-8. Only then Wi-Fi Aware (toggle on both home screens), if both devices support it.
+8. **Mixed pair** (iPhone + iPad), both directions: identical code flow, no connection choice visible
+   (decided 2026-10-10: Wi-Fi Aware left the shipping app; Debug builds keep an "Internal test" switch).
+9. Internal only, Debug builds, Wi-Fi Aware test mode on both phones. **2026-10-10:**
+   Rich-camera/Davia-remote failed (remote stuck in `preparing`), Davia-camera/Rich-remote connected
+   in 3 s on the same build. The flow was reworked (waiting room, browser-only endpoints, fuller
+   trace); see TRANSPORT.md § device run of 2026-10-10. Next run: both role directions, and read the
+   paired-device list each side logs at listener/browser start.
 
 **Decided, don't re-litigate:** `Trace` stays DEBUG-only (TestFlight builds write no
 `transport.log`; use `Tools/device-debug.sh` for a cabled Debug install when something fails). The
@@ -57,6 +64,67 @@ unwinding. If the device run shows a publish conflict there, make the new listen
   distribution entitlement, capture screenshots, and complete App Store Connect declarations.
   Use [APP_STORE_RELEASE.md](APP_STORE_RELEASE.md) for the exact acceptance matrix and review notes.
   The new App Store archive script exports locally; the existing TestFlight script remains internal-only.
+
+## Remote live view (built 2026-10-11; needs the hardware pass)
+
+Designed with Codex on 2026-10-10 (`docs/reviews/2026-10-10-codex.md`, "Remote live view") and built the
+next day, on top of the still-uncommitted 2026-10-10 work (Rich chose to build before that device run).
+What exists: wire protocol v4 (`startPreview`/`stopPreview`, `previewStarted`/`previewRefused`/
+`previewEnded`), a binary `PreviewPacket` on lane 2 of the Wi-Fi leg only (`PeerTransport.sendPreview`;
+the layered transport throws rather than touching Bluetooth), a demand-driven loop (the remote keeps one
+frame request in flight; the camera serves only the newest; late answers are discarded), ≈480 px / 5 fps /
+≤32 KiB clamped by the camera, skips for a running file transfer and for heat (`.serious` skips,
+`.critical` ends, `.fair` shrinks to 320 px), a 10 s lease on the camera, `AVCaptureVideoDataOutput` +
+`PreviewFrameEncoder` (CIContext JPEG, rotation baked in, not mirrored) attached only while a subscription
+exists, the remote's `LiveViewStage` with the capture row beneath, a Live view switch in the remote's
+settings, and the camera's "Sharing live view with …" pill (no Stop button: Rich's call). Reviewed by Codex the same day
+(14 findings; 12 accepted and fixed: connection rotation pinned to 0°, no timeout reissue + age
+watchdog, hardware cost / movie-output yield, serial tap transitions, request ids, host-side encode
+deadline, frame validation + off-main decode, heat before transfer, stage height cap, purpose
+strings, two-leg transport tests, integral crop). 32 new core tests (114 total).
+
+**Seen on hardware 2026-10-15 (iPhone 17 Pro Max camera, Debug build → iPad Pro 11" remote, TestFlight
+`202610121205`, same Wi-Fi):** Bluetooth connected, the Wi-Fi fast lane came up 2 s later, the live view
+started 1 s after that (480 px / 5 fps / 32 KiB accepted), and a photo went over Wi-Fi 15 s in; Rich
+reports the preview working. An earlier attempt the same evening showed "Live view needs a shared Wi-Fi
+network" because the fast lane had not come up (cause not captured: the iPhone ran the TestFlight build,
+which logs nothing; Local Network permission or a first-connect race are the suspects). Also seen: after
+backgrounding the camera, the remote took almost a minute to reconnect — the first retry opened a channel
+to a still-suspended app over a stale Bluetooth link and rode out the 30 s attempt timer. Fixed 2026-10-15
+(TRANSPORT.md § Self-healing: shed the stale link first, 8 s channel-open deadline, 15 s × 8 reconnect
+attempts); TestFlight 202610151546. Expect the reconnect within a few seconds of the camera returning.
+
+**Later the same evening:** orientation correct for both cameras; the live view held for ~5 minutes; after
+backgrounding the camera and reconnecting, the fast lane never returned (camera advertised, iPad never
+invited) — fixed by recreating the Multipeer browser and session (TRANSPORT.md § Self-healing), together with
+the Bluetooth-only footnote now explaining deferred downloads too and iPad settings sheets opening at full
+height; TestFlight build 202610151537. A third cause of the missing lane turned up on the re-run (the
+remote invited with a stale `MCPeerID` instance) and was fixed; **verified 2026-10-15 19:58Z** with Debug
+builds on iPhone + iPad (both logs kept): camera backgrounded 10 s, L2CAP back 1 s after its return, Wi-Fi
+lane 2 s later, live view 1 s after that. TestFlight 202610151554 has everything.
+
+**2026-10-15, later:** a video did not reach the iPad with videos on and Wi-Fi up; no send attempt was
+logged. The camera's own shutter always recorded with send-back off, so if the recording was started at
+the camera that explains it — fixed by syncing the remote's copy preferences to the camera
+(`setSendBack`); capture/send decisions are now traced. Verified by Rich the same evening ("It worked"); TestFlight
+202610151606 carries it.
+
+**Submission readiness (2026-10-15):** the ASC record (1084487132) still has only version 1.0 from 2016 with
+its 2016 screenshot sets; a 2.0 version must be created with new metadata, 6.9" iPhone and 13" iPad
+screenshots, the privacy questionnaire (Data Not Collected), age rating, and the review note from
+APP_STORE_RELEASE.md. The internal-only TestFlight builds cannot be submitted; the App Store build comes
+from `Tools/app-store-archive.sh` + an upload with `Tools/ExportOptions-AppStore.plist`. The account has two
+other apps WAITING_FOR_REVIEW (Goatacorn Goes to Japan!, Goatacorn 2.0): the ship-app-store cadence rule
+says one app in review at a time, so Shot Caller is submitted only after those clear.
+
+**Hardware still to do, in this order** (rows also in APP_STORE_RELEASE.md): the other role direction
+and iPhone↔iPhone; rotation and handedness for both
+cameras in both orientations (if frames come out rotated the wrong way, the mapping is
+`CaptureService.previewFrame`'s angle→orientation switch); shutter latency with live view on vs off;
+Bluetooth-only shows the footnote and no frames; Wi-Fi drop mid-view then return; a download while viewing
+(frames pause, resume); a 10-minute live view for heat and battery; countdown and recording drawn over the
+frame; app switcher shows no frame. Open: JPEG vs H.264 energy (only if JPEG proves costly), a Bluetooth
+"framing snapshot" tier, remote tap-to-focus/zoom.
 
 ## Nice to have
 

@@ -49,6 +49,20 @@ for RESOURCE in PrivacyInfo.xcprivacy PRIVACY.md; do
 done
 plutil -lint "$APP/PrivacyInfo.xcprivacy"
 
+# Wi-Fi Aware is Debug-only (docs/TRANSPORT.md, 2026-10-10): the Release app must declare none of it.
+if plutil -extract WiFiAwareServices raw -o - "$APP/Info.plist" >/dev/null 2>&1; then
+  echo "Release Info.plist still declares WiFiAwareServices; check project.yml configs." >&2; exit 1
+fi
+if codesign -d --entitlements - "$APP" 2>/dev/null | grep -q 'com.apple.developer.wifi-aware'; then
+  echo "Release app is signed with the Wi-Fi Aware entitlement; check CODE_SIGN_ENTITLEMENTS for Release." >&2; exit 1
+fi
+# Every executable and dylib in the bundle (Debug builds keep app code in ShotCaller.debug.dylib).
+for BIN in $(find "$APP" -type f \( -perm +111 -o -name '*.dylib' \)); do
+  if strings "$BIN" | grep -q 'Internal test: Wi-Fi Aware'; then
+    echo "Release bundle contains the internal test mode ($BIN); check #if DEBUG gating." >&2; exit 1
+  fi
+done
+
 xcodebuild -exportArchive \
   -archivePath "$OUT/ShotCaller.xcarchive" \
   -exportOptionsPlist Tools/ExportOptions-AppStore.plist \

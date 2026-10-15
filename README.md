@@ -14,8 +14,9 @@ Control a nearby camera over Bluetooth without a shared Wi-Fi network. Photos an
 ## What it does
 
 - **Two roles.** Open the app on both devices. One becomes the **camera**, the other the **remote**.
-- **Pairing you control.** Automatic connection uses a four-digit code shown on the camera. Optional Wi-Fi Aware uses Apple's system pairing on supported devices.
+- **Pairing you control.** A four-digit code shown on the camera pairs the two devices; nothing else to set up.
 - **Photos and video.** The remote switches modes, cycles the flash, flips between front and back cameras, starts a countdown the people in the shot can see on the camera's screen, takes the picture or starts and stops recording.
+- **Live view.** When both devices share a Wi-Fi network, the remote shows what the camera sees, a few frames a second, so you can frame the shot from where you stand. Over Bluetooth alone the controls work without it. The camera shows who is watching and can stop sharing.
 - **Copies where you want them.** Choose whether the camera saves to Photos and whether the remote requests photos or videos. The paired remote receives small previews either way. Full files transfer automatically over a Wi-Fi path; on Bluetooth they wait for a download request with a size/time estimate and photo-size choices. Files waiting for transfer are queued automatically when Wi-Fi becomes available. Failed Photos saves can be retried while the session remains open.
 - **Camera controls.** HEIF photos and HEVC video where supported, stabilization, horizon-level rotation handling, tap to focus, pinch to zoom, and Camera Control / volume-button shutter on the camera device.
 - **Permissions explained.** Each role has a first-use setup with optional saving. The remote does not ask for Camera or Microphone. Privacy & Help includes an offline policy and support access.
@@ -28,7 +29,7 @@ Control a nearby camera over Bluetooth without a shared Wi-Fi network. Photos an
 
 **Automatic connection layers Bluetooth and Wi-Fi.** Bluetooth handles discovery, code pairing, and controls. It must stay enabled, including when using Airplane Mode. When both devices can reach each other over Wi-Fi/AWDL, the app establishes a Wi-Fi path for files. Otherwise full copies can be downloaded over Bluetooth.
 
-**Wi-Fi Aware is optional.** On two supported devices running iOS/iPadOS 26 or later, turn on Wi-Fi Aware in the **Connection** section of both home screens before choosing roles. Open the camera's pairing control, then pair it on the remote using Apple's system prompt. This replaces the four-digit app code. The current implementation fixes the handoff between system pairing and data discovery; physical validation is still required. See [docs/TRANSPORT.md](docs/TRANSPORT.md).
+**Wi-Fi Aware is not in the shipping app.** It exists as a Debug-only internal test mode while its reliability is proven, and is planned to return as an opt-in transfer upgrade inside a connected session (so a mixed pair, such as an iPhone with an older iPad, can never end up on connections that cannot see each other). See [docs/TRANSPORT.md](docs/TRANSPORT.md).
 
 ## Building
 
@@ -71,10 +72,11 @@ Packages/ShotCallerCore/      everything that doesn't need a device — with tes
 Tools/render-icon.swift       draws the app icon (light, dark, tinted)
 ```
 
-- **Transport is a protocol.** Everything above the transport speaks `PeerTransport` and one `AsyncStream<TransportEvent>`. The default `LayeredTransport` composes a `BluetoothTransport` (Core Bluetooth over an L2CAP channel) with a `MultipeerTransport` Wi-Fi path it establishes over the Bluetooth link. `WiFiAwareTransport` (iOS 26) is an optional alternative; `FakeTransport` backs the tests. Only the concrete transports import their frameworks.
+- **Transport is a protocol.** Everything above the transport speaks `PeerTransport` and one `AsyncStream<TransportEvent>`. The default `LayeredTransport` composes a `BluetoothTransport` (Core Bluetooth over an L2CAP channel) with a `MultipeerTransport` Wi-Fi path it establishes over the Bluetooth link. `WiFiAwareTransport` (iOS 26) compiles into Debug builds only as an internal test mode; `FakeTransport` backs the tests. Only the concrete transports import their frameworks.
 - **The wire protocol is typed.** Remote → camera is `RemoteCommand`; camera → remote is `CameraEvent`. The camera sends a full `CameraState` snapshot whenever anything changes, and the remote renders from it. Every message carries a protocol version; mismatched versions refuse to talk with a clear message on both screens.
 - **Both role models are pure logic.** `CameraHostModel` and `RemoteModel` talk to a `PeerTransport`, a `CameraDevice` and a `MediaStore`; the app supplies AVFoundation, PhotoKit and Multipeer, the tests supply fakes. `EndToEndTests` drives a remote model against a camera model over two linked fake transports.
 - **Pairing.** After a connection is established, the camera sends a random per-session challenge. The remote proves the code over the data channel using `HMAC-SHA256(key: SHA256(code), challenge + remoteName)`. The camera verifies before accepting commands, allows one remote at a time, and issues a new code after three wrong guesses. The code is intended to keep an ordinary nearby app user from controlling the camera; it is not designed to resist custom sniffing or attack tooling. Wi-Fi Aware instead relies on system-authorized pairing.
+- **Live view, by demand.** The remote asks the camera for one small JPEG frame at a time over the Wi-Fi lane (never Bluetooth) and asks again only after showing it, so a slow receiver can never build a queue; the camera attaches its video-data output only while a remote is subscribed, yields to file transfers and heat, and bakes the capture rotation into each frame.
 - **Files, delivered by channel.** Full-resolution photos are the original HEIF/JPEG (metadata intact); videos are HEVC `.mov`. Delivery is decoupled from intent: over Wi-Fi they send automatically; over Bluetooth they're held and sent on request (photos can be re-encoded smaller — Full / Reduced / Small — for a quicker Bluetooth transfer), with live progress and cancel on both ends, and they flush automatically when a Wi-Fi lane appears. The receiver saves to Photos with add-only permission. Measured throughput: ~1.5 MB/s over the Wi-Fi lane vs ~28 KB/s over Bluetooth L2CAP.
 
 ## Status
@@ -83,12 +85,13 @@ The earlier implementation was **verified on two physical devices (iPhone 17 Pro
 
 - Bluetooth control with optional Wi-Fi file transfer, including recovery after Wi-Fi drops.
 - Previews, deferred Bluetooth downloads, photo compression, progress/cancel, and automatic delivery when Wi-Fi returns.
+- Remote live view over the Wi-Fi lane (built 2026-10-11; awaiting its device pass).
 - Code pairing, photo/video capture, countdown, flash, and front/back camera switching.
 
 Implemented since that hardware check:
 
 - First-use setup per role, optional saving preferences, clearer permission recovery, adaptive screen layouts, and capture previews that distinguish receipt from a successful save.
-- Wi-Fi Aware pairing/discovery handoff, reuse of the system-selected endpoint, and single-peer connection handling.
+- Wi-Fi Aware (Debug-only): pairing/discovery handoff, browser-only endpoints, single-peer connection handling, awaited teardown.
 - Capture/save recovery and transfer lifecycle fixes, with meaningful model and transport regression coverage in the core package.
 - A backgrounded remote reconnects to its camera without re-pairing; a denied microphone records silent video with a notice.
 - Privacy manifest, bundled policy, release-only diagnostic privacy, and separate App Store archive tooling.

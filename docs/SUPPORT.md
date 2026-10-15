@@ -11,13 +11,11 @@ Shot Caller needs two nearby iPhones or iPads with the app installed. One takes 
 
 Bluetooth carries controls without a shared Wi-Fi network. Joining the same Wi-Fi network can make transferring full photos and videos faster. When a file is waiting on Bluetooth, use **Download** and choose the size you want.
 
-## Wi-Fi Aware
+## Connection
 
-Wi-Fi Aware is an optional connection method. Both devices need iOS or iPadOS 26 or later and hardware that supports it. The app checks availability on each device. Enable **Wi-Fi Aware** in the **Connection** section of both home screens before choosing roles, then follow the camera and remote's system pairing controls. The system pairing flow replaces the app's four-digit code.
+Shot Caller connects your two devices over Bluetooth, so no shared network is needed for taking pictures. Join both devices to the same Wi-Fi network for faster photo and video transfers; without it, full copies can still be downloaded over Bluetooth. There is no connection setting to choose: every device uses the same method.
 
-After confirming Apple's prompt, tap **Done pairing** on the camera if its pairing panel is still open. This releases the service so the selected remote can connect; it is particularly important when pairing a device you used before. The remote connects to the camera selected in the prompt.
-
-If the camera doesn't appear, make sure both devices use the same connection method and keep the camera's pairing interface open while the remote searches. Canceling system pairing should let you try again. To return to Automatic connection, close the sessions and turn Wi-Fi Aware off on both home screens.
+If the camera does not appear on the remote: allow Bluetooth for Shot Caller in Settings on both devices, keep them within a few metres of each other, and make sure both run the current version of the app.
 
 ## Permissions and missing copies
 

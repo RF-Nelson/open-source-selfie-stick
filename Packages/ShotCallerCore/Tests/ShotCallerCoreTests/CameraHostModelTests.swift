@@ -136,6 +136,7 @@ import Testing
         #expect(await waitUntil { model.captures.count == 1 })
         #expect(device.photoCount == 1)
         #expect(store.photos == [Data("fake-photo-1".utf8)])
+        #expect(await waitUntil { transport.sentFiles.count == 1 })   // the send runs in its own task
         let sent = try #require(transport.sentFiles.first)
         #expect(sent.name.hasSuffix(".jpg"))
         #expect(sent.peer.id == "remote")
@@ -174,7 +175,7 @@ import Testing
         transport.emit(.fileChannelFast(true))   // fast lane up → auto-send
         _ = await waitUntil { model.fileChannelFast == true }
         try command(.capturePhoto(sendBack: true, delay: 0))
-        #expect(await waitUntil { model.captures.count == 1 })
+        #expect(await waitUntil { model.captures.count == 1 && transport.sentFiles.count == 1 })   // the send runs in its own task
         let sent = try #require(transport.sentFiles.first)
         #expect(model.captures[0].willSendFile)
         #expect(!model.captures[0].fileAvailable)

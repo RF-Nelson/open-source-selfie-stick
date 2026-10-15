@@ -8,10 +8,10 @@ struct PrivacyHelpView: View {
         NavigationStack {
             List {
                 Section("Connect your devices") {
-                    Text("Open Shot Caller on both devices. With Automatic connection selected, choose Camera on the one taking the picture and Remote on the one in your hand. On the remote, select the camera and enter its four-digit code.")
-                    Text("Keep Bluetooth and Wi-Fi on, and keep both apps open. Bluetooth carries camera controls. Wi-Fi transfers full photos and videos faster when available.")
-                    Text("For Wi-Fi Aware, turn it on in the Connection section of both home screens before choosing roles. Both devices need compatible hardware and iOS 26 or later. Open the camera's pairing control, then pair it from the remote using Apple's system prompt. No four-digit app code is needed.")
-                    Text("After confirming system pairing, tap Done pairing on the camera if its pairing panel is still open. This lets the selected remote connect, including when you pair a device you have used before.")
+                    Text("You need two iPhones or iPads with Shot Caller installed. Choose Camera on the one taking the picture and Remote on the one in your hand. On the remote, select the camera and enter the four-digit code shown on its screen.")
+                    Text("Keep Bluetooth on and both apps open. Bluetooth carries the camera controls. Joining both devices to the same Wi-Fi network makes full photo and video transfers much faster; without it, copies can still be downloaded over Bluetooth.")
+                    Text("On a shared Wi-Fi network the remote also shows a live view of what the camera sees, a few frames a second. Those frames go straight to the remote and are not saved on either device. The camera shows who is watching; disconnecting the remote ends it, and the remote can turn live view off in its settings.")
+                    Text("If the camera does not appear on the remote: check that Bluetooth is allowed for Shot Caller in Settings on both devices, keep the devices within a few metres of each other, and make sure both are running the current version of the app.")
                 }
                 Section("Copies and permissions") {
                     Text("Choose where to keep full copies in each role's settings. The remote receives a small preview of each capture. If a full copy is waiting, tap Download or connect both devices to the same Wi-Fi network.")

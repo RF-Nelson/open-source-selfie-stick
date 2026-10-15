@@ -10,11 +10,11 @@ Shot Caller is a camera remote app for nearby iPhones and iPads. It does not req
 
 The app advertises a device nickname or a model name with a short random suffix so you can recognize the camera. Nearby devices may see that name while discovery is active; avoid putting private information in your nickname.
 
-Once you pair, the devices exchange camera controls, camera settings, connection information, and small capture previews. Full photos and videos transfer to the paired remote according to your copy settings and download choices. Original files retain their embedded metadata, such as capture time and camera information. Shot Caller does not request your location. Only pair with a device you trust: its owner can save the copies they receive.
+Once you pair, the devices exchange camera controls, camera settings, connection information, and small capture previews. When both devices share a Wi-Fi network, the remote can also show a live view of what the camera sees: small frames sent directly to the paired remote a few times a second. Shot Caller does not save live-view frames to Photos or to app files and does not send them to the developer; the person holding the remote can still take screenshots or record its screen. The camera shows who is receiving the live view; disconnecting the remote ends it, and the remote can turn live view off in its settings. Full photos and videos transfer to the paired remote according to your copy settings and download choices. Original files retain their embedded metadata, such as capture time and camera information. Shot Caller does not request your location. Only pair with a device you trust: its owner can save the copies they receive.
 
 ## Permissions you control
 
-Camera access lets this device take photos and videos. Microphone access adds sound to videos. Photos access is add-only: Shot Caller can save captures and received copies but cannot browse your existing library. Bluetooth and local network access connect nearby devices. On compatible devices, optional Wi-Fi Aware pairing is managed by Apple's system pairing interface.
+Camera access lets this device take photos and videos. Microphone access adds sound to videos. Photos access is add-only: Shot Caller can save captures and received copies but cannot browse your existing library. Bluetooth and local network access connect nearby devices.
 
 You can change permissions in Settings. You can choose whether the camera keeps a copy and whether the remote receives full photos and videos. Small capture previews are sent to the paired remote even when full copies are turned off. Disconnect or leave the camera role to stop remote control.
 

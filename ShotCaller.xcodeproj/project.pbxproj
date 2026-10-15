@@ -16,12 +16,14 @@
 		512CA5DCBC6CD39E3D832B3D /* PhotoKitMediaStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 991C443010DDED4D0D02BB0F /* PhotoKitMediaStore.swift */; };
 		57F12EAFF65F07A7C8F429FE /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 360309212FEF486F95372438 /* Components.swift */; };
 		5F7443EC7886A0A83B1A77E6 /* ImageThumbnailMaker.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5B04AF1137CF40F882C5349 /* ImageThumbnailMaker.swift */; };
+		6EC1246F1570DA591C5CFF6B /* LivePreviewPresenter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A870BACA338CAAE9D842BC9 /* LivePreviewPresenter.swift */; };
 		7C89381F7E799F6491431418 /* TransportFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E020FDF155C4152B9412E00 /* TransportFactory.swift */; };
 		7EE0F0FE01A7933C6041D7F5 /* CameraPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02597C4BA2E418D38292E1BA /* CameraPreviewView.swift */; };
 		85358E847B1A91AF85A7D9DF /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BF327D965A97F69C03E9A5F /* RootView.swift */; };
 		8CF42A48F73F6F15EAE3DEF8 /* PrivacyHelpView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D88BF12E4266B0CE666DB169 /* PrivacyHelpView.swift */; };
 		962462701F1C7DBB4C00C394 /* DeviceIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15A38B1D3DFECC9A0947C9C8 /* DeviceIdentity.swift */; };
 		99DF2333EF351BF26B1BB0CA /* CaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C4444241BFA6797A62E771E /* CaptureService.swift */; };
+		AAAB2A49C89ACFB603BE1276 /* PreviewFrameEncoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96588CB518E1C941EFB663E4 /* PreviewFrameEncoder.swift */; };
 		ACBB5144CA8231051ED36DD4 /* CaptureDelegates.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF747C43D2765897ECA2EE6 /* CaptureDelegates.swift */; };
 		B5FDAEA876E74F5B3DA38440 /* RemoteScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DC17402F4C062BEFF44D225 /* RemoteScreen.swift */; };
 		BADEB4AB72F318F6C9EDF542 /* ShotCallerCore in Frameworks */ = {isa = PBXBuildFile; productRef = 865DD60214B66AF1A555689F /* ShotCallerCore */; };
@@ -40,6 +42,7 @@
 		0FBBC99FEF40338732B6E756 /* WiFiAwarePairingControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WiFiAwarePairingControls.swift; sourceTree = "<group>"; };
 		15A38B1D3DFECC9A0947C9C8 /* DeviceIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceIdentity.swift; sourceTree = "<group>"; };
 		287D333F16477221ABF6A6BA /* ShotCaller.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ShotCaller.entitlements; sourceTree = "<group>"; };
+		2A870BACA338CAAE9D842BC9 /* LivePreviewPresenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivePreviewPresenter.swift; sourceTree = "<group>"; };
 		2DE59108C0DE1803FF4CB798 /* WiFiAwarePairing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WiFiAwarePairing.swift; sourceTree = "<group>"; };
 		360309212FEF486F95372438 /* Components.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Components.swift; sourceTree = "<group>"; };
 		4C4444241BFA6797A62E771E /* CaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureService.swift; sourceTree = "<group>"; };
@@ -51,6 +54,7 @@
 		82E789968FF1D17856059A70 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		9144D4C43CBF192730F10801 /* ShotCaller.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = ShotCaller.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		915D09D44E85499AB1136063 /* SimulatedCameraDevice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SimulatedCameraDevice.swift; sourceTree = "<group>"; };
+		96588CB518E1C941EFB663E4 /* PreviewFrameEncoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewFrameEncoder.swift; sourceTree = "<group>"; };
 		991C443010DDED4D0D02BB0F /* PhotoKitMediaStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoKitMediaStore.swift; sourceTree = "<group>"; };
 		C8073A3BA65026E0193E024E /* CodeEntrySheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CodeEntrySheet.swift; sourceTree = "<group>"; };
 		C83F756137D4702B3A01561D /* RolePickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RolePickerView.swift; sourceTree = "<group>"; };
@@ -117,6 +121,7 @@
 			isa = PBXGroup;
 			children = (
 				C8073A3BA65026E0193E024E /* CodeEntrySheet.swift */,
+				2A870BACA338CAAE9D842BC9 /* LivePreviewPresenter.swift */,
 				6DC17402F4C062BEFF44D225 /* RemoteScreen.swift */,
 			);
 			path = Remote;
@@ -165,6 +170,7 @@
 				4C4444241BFA6797A62E771E /* CaptureService.swift */,
 				D5B04AF1137CF40F882C5349 /* ImageThumbnailMaker.swift */,
 				991C443010DDED4D0D02BB0F /* PhotoKitMediaStore.swift */,
+				96588CB518E1C941EFB663E4 /* PreviewFrameEncoder.swift */,
 				915D09D44E85499AB1136063 /* SimulatedCameraDevice.swift */,
 			);
 			path = Camera;
@@ -256,8 +262,10 @@
 				57F12EAFF65F07A7C8F429FE /* Components.swift in Sources */,
 				962462701F1C7DBB4C00C394 /* DeviceIdentity.swift in Sources */,
 				5F7443EC7886A0A83B1A77E6 /* ImageThumbnailMaker.swift in Sources */,
+				6EC1246F1570DA591C5CFF6B /* LivePreviewPresenter.swift in Sources */,
 				512CA5DCBC6CD39E3D832B3D /* PhotoKitMediaStore.swift in Sources */,
 				CE9CF2311C6D3D59FC0647ED /* PhotoLibraryAccess.swift in Sources */,
+				AAAB2A49C89ACFB603BE1276 /* PreviewFrameEncoder.swift in Sources */,
 				8CF42A48F73F6F15EAE3DEF8 /* PrivacyHelpView.swift in Sources */,
 				B5FDAEA876E74F5B3DA38440 /* RemoteScreen.swift in Sources */,
 				3D7B273C2B91CA904500DB20 /* RolePickerView.swift in Sources */,
@@ -284,7 +292,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = ShotCaller/Info.plist;
+				INFOPLIST_FILE = "Config/Info-Debug.plist";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -308,7 +316,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = ShotCaller/ShotCaller.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "Config/ShotCaller-Release.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;

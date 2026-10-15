@@ -1,4 +1,5 @@
-#if os(iOS)
+// Debug-only internal test mode (docs/TRANSPORT.md, 2026-10-10): Release builds compile none of this.
+#if os(iOS) && DEBUG
 import Foundation
 import Network
 import WiFiAware
@@ -36,10 +37,16 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
     private var advertisingRequested = false
     private var browsingRequested = false
     private var pairingSuspended = false
+    /// Each suspension for pairing gets a token; only its owner may resume discovery.
+    private var pairingGeneration = 0
+    /// Cancelled discovery tasks that may still be unwinding. A replacement awaits them first, so
+    /// two publishers (or subscribers) of the service never overlap.
+    private var retiringTasks: [Task<Void, Never>] = []
+    /// When a session ended by failure; the next listener waits ~2 s so the radio can settle.
+    private var lastFailureAt: Date?
     private var session = SinglePeerSession()
     private var connection: Connection?
     private var endpointsByPeerID: [String: WAEndpoint] = [:]
-    private var selectedEndpointsByPeerID: [String: WAEndpoint] = [:]
     private var fileSend: (id: UUID, name: String, cancelled: Bool)?
     private struct IncomingFile {
         let handle: FileHandle
@@ -84,39 +91,81 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
 
     /// DeviceDiscoveryUI claims the same publish/subscribe service. Wait for our network tasks to
     /// finish before mounting its controls, including when a person adds a second paired device.
-    public func suspendForPairing() async {
-        let tasks = lock.withLock { () -> [Task<Void, Never>] in
+    /// Returns the token that `resumeAfterPairing(token:)` needs. A caller whose task was cancelled
+    /// while awaiting must still pass its token back, and a newer suspension makes it a no-op.
+    public func suspendForPairing() async -> Int {
+        let token = lock.withLock { () -> Int in
             pairingSuspended = true
-            let tasks = [listenerTask, browserTask].compactMap { $0 }
+            pairingGeneration += 1
+            let count = [listenerTask, browserTask, connectionTask].compactMap { $0 }.count
+            Trace.log("Wi-Fi Aware suspend for pairing #\(pairingGeneration): cancelling \(count) task(s)")
             listenerID = nil
             browserID = nil
+            retire(listenerTask)
+            retire(browserTask)
+            retire(connectionTask)
             listenerTask = nil
             browserTask = nil
-            tasks.forEach { $0.cancel() }
-            return tasks
+            connectionTask = nil
+            return pairingGeneration
         }
         clearDiscovered()
-        for task in tasks { await task.value }
+        // The barrier is shared: every suspension awaits whatever is still unwinding, however many
+        // suspensions were started and stopped in between.
+        await awaitRetiringTasks()
+        Trace.log("Wi-Fi Aware suspend for pairing #\(token): discovery stopped")
+        return token
     }
 
     /// Call only after the pairing controls disappear, so there is a single owner of the service.
-    public func resumeAfterPairing() {
-        let requested = lock.withLock { () -> (Bool, Bool) in
+    public func resumeAfterPairing(token: Int) {
+        let requested = lock.withLock { () -> (Bool, Bool)? in
+            guard token == pairingGeneration, pairingSuspended else { return nil }
             pairingSuspended = false
             return (advertisingRequested, browsingRequested)
         }
+        guard let requested else {
+            Trace.log("Wi-Fi Aware resume after pairing #\(token): ignored (not the current owner)")
+            return
+        }
+        Trace.log("Wi-Fi Aware resume after pairing #\(token): advertise=\(requested.0) browse=\(requested.1)")
         if requested.0 { startAdvertising(discoveryInfo: [:]) }
         if requested.1 { startBrowserIfRequested() }
     }
 
-    /// Preserve the actual selection from DevicePicker instead of hoping a later browse returns it.
-    public func registerPairedEndpoint(_ endpoint: WAEndpoint) -> Peer {
+    /// Replacement discovery must not start while a cancelled listener/browser/connection is still
+    /// unwinding: the service allows one publisher and one subscriber per device. Tasks stay in the
+    /// list until awaited, so any number of waiters see the same barrier. A discovery task awaits
+    /// only the predecessors captured when it was created (tasks that already existed), so the
+    /// dependencies are acyclic: no task ever awaits itself or a task created after it.
+    private func awaitRetiringTasks() async {
+        let snapshot = lock.withLock { retiringTasks }
+        await awaitTasks(snapshot)
+    }
+
+    private func awaitTasks(_ tasks: [Task<Void, Never>]) async {
+        for task in tasks { await task.value }
+        lock.withLock { retiringTasks.removeAll { tasks.contains($0) } }
+    }
+
+    /// After a failure, give the radio a moment before publishing again (2 s plus a little jitter).
+    private func backOffAfterFailure() async {
+        guard let since = lock.withLock({ lastFailureAt }).map({ Date().timeIntervalSince($0) }), since < 2 else { return }
+        let wait = (2 - since) + Double.random(in: 0...0.5)
+        Trace.log("Wi-Fi Aware listener backing off \(String(format: "%.1f", wait)) s after a failure")
+        try? await Task.sleep(for: .seconds(wait))
+    }
+
+    private func describe(_ error: Error) -> String {
+        if let nw = error as? NWError, let wa = nw.wifiAware { return "\(nw) [\(wa)]" }
+        return error.localizedDescription
+    }
+
+    /// The peer a DevicePicker selection will show up as once the browser rediscovers it. Picker
+    /// endpoints are for pairing; data connections only use endpoints the browser returned.
+    public func peer(forSelected endpoint: WAEndpoint) -> Peer {
         let peer = peer(for: endpoint)
-        lock.withLock {
-            endpointsByPeerID[peer.id] = endpoint
-            selectedEndpointsByPeerID[peer.id] = endpoint
-        }
-        continuation.yield(.peerFound(peer))
+        Trace.log("Wi-Fi Aware picker selected \(peer.displayName) (\(peer.id)); waiting for the browser to find it")
         return peer
     }
 
@@ -132,7 +181,11 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
             guard !pairingSuspended, listenerTask == nil else { return }
             let id = UUID()
             listenerID = id
-            listenerTask = Task { [weak self] in await self?.runListener(service: service, id: id) }
+            let predecessors = retiringTasks
+            listenerTask = Task { [weak self] in
+                guard let self else { return }
+                await self.runListener(service: service, id: id, after: predecessors)
+            }
         }
     }
 
@@ -142,23 +195,51 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
             // The listener owns accepted connections. Stopping discovery after .connected must not
             // cancel the active remote. The session gate rejects all further incoming connections.
             guard session.current == nil else { return }
+            if listenerTask != nil { Trace.log("Wi-Fi Aware listener stopping (advertising off)") }
             listenerID = nil
-            listenerTask?.cancel()
+            retire(listenerTask)
             listenerTask = nil
         }
     }
 
-    private func runListener(service: WAPublishableService, id: UUID) async {
+    /// Call under the lock: cancels a discovery task and remembers it until a replacement has awaited it.
+    private func retire(_ task: Task<Void, Never>?) {
+        guard let task else { return }
+        task.cancel()
+        retiringTasks.append(task)
+    }
+
+    private func runListener(service: WAPublishableService, id: UUID, after predecessors: [Task<Void, Never>]) async {
+        await awaitTasks(predecessors)
+        await backOffAfterFailure()
+        guard !Task.isCancelled, lock.withLock({ listenerID == id }) else {
+            Trace.log("Wi-Fi Aware listener superseded before it started")
+            return
+        }
+        var waitedForPairing = false
         while !Task.isCancelled {
             do {
                 guard try await hasPairedDevice() else {
+                    if !waitedForPairing { Trace.log("Wi-Fi Aware listener waiting: no paired devices yet") }
+                    waitedForPairing = true
                     try await Task.sleep(for: .seconds(1))
                     continue
                 }
                 let listener = try NetworkListener(
                     for: .wifiAware(.connecting(to: service, from: .allPairedDevices))
                 ) { Coder(WAFrame.self, using: .json) { TCP() } }
-                Trace.log("Wi-Fi Aware listener starting")
+                .onStateUpdate { [weak self] _, state in
+                    if case .failed(let error) = state, let self {
+                        // Record the failure here: the accepted session may end "cleanly" from the
+                        // listener's cancellation, and the next listener must still back off.
+                        self.lock.withLock { self.lastFailureAt = Date() }
+                        Trace.log("Wi-Fi Aware listener state: failed \(self.describe(error))")
+                    } else {
+                        Trace.log("Wi-Fi Aware listener state: \(String(describing: state))")
+                    }
+                }
+                let paired = await Self.pairedDeviceSummary()
+                Trace.log("Wi-Fi Aware listener starting (paired devices: \(paired))")
                 try await listener.run { [weak self] connection in
                     guard let self, !Task.isCancelled else { return }
                     let peer = Peer(id: connection.id, displayName: "Remote")
@@ -167,15 +248,21 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
                         self.listenerID == id && !self.pairingSuspended &&
                         self.session.begin(id: sessionID, peer: peer)
                     }
+                    Trace.log("Wi-Fi Aware incoming connection \(sessionID): \(accepted ? "accepted" : "refused (busy or suspended)")")
                     guard accepted else { return }
                     await self.receive(connection: connection, sessionID: sessionID, timeout: 30)
                 }
+                Trace.log("Wi-Fi Aware listener run ended without error")
             } catch {
-                guard !Task.isCancelled, lock.withLock({ listenerID == id }) else { return }
+                guard !Task.isCancelled, lock.withLock({ listenerID == id }) else {
+                    Trace.log("Wi-Fi Aware listener stopped: \(Task.isCancelled ? "cancelled" : "superseded")")
+                    return
+                }
                 reportDiscoveryError(error)
                 do { try await Task.sleep(for: .seconds(3)) } catch { return }
             }
         }
+        Trace.log("Wi-Fi Aware listener stopped: cancelled")
     }
 
     public func startBrowsing() {
@@ -192,47 +279,80 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
             guard browsingRequested, !pairingSuspended, browserTask == nil else { return }
             let id = UUID()
             browserID = id
-            browserTask = Task { [weak self] in await self?.runBrowser(service: service, id: id) }
+            let predecessors = retiringTasks
+            browserTask = Task { [weak self] in
+                guard let self else { return }
+                await self.runBrowser(service: service, id: id, after: predecessors)
+            }
         }
     }
 
     public func stopBrowsing() {
         lock.withLock {
             browsingRequested = false
+            if browserTask != nil { Trace.log("Wi-Fi Aware browser stopping") }
             browserID = nil
-            browserTask?.cancel()
+            retire(browserTask)
             browserTask = nil
         }
         clearDiscovered()
     }
 
-    private func runBrowser(service: WASubscribableService, id: UUID) async {
+    private func runBrowser(service: WASubscribableService, id: UUID, after predecessors: [Task<Void, Never>]) async {
+        await awaitTasks(predecessors)
+        guard !Task.isCancelled, lock.withLock({ browserID == id }) else {
+            Trace.log("Wi-Fi Aware browser superseded before it started")
+            return
+        }
+        var waitedForPairing = false
         while !Task.isCancelled {
             do {
                 guard try await hasPairedDevice() else {
+                    if !waitedForPairing { Trace.log("Wi-Fi Aware browser waiting: no paired devices yet") }
+                    waitedForPairing = true
                     try await Task.sleep(for: .seconds(1))
                     continue
                 }
                 let browser = NetworkBrowser(for: .wifiAware(.connecting(to: .allPairedDevices, from: service)))
+                    .onStateUpdate { [weak self] _, state in
+                        if case .failed(let error) = state, let self {
+                            Trace.log("Wi-Fi Aware browser state: failed \(self.describe(error))")
+                        } else {
+                            Trace.log("Wi-Fi Aware browser state: \(String(describing: state))")
+                        }
+                    }
+                let paired = await Self.pairedDeviceSummary()
+                Trace.log("Wi-Fi Aware browser starting (paired devices: \(paired))")
                 try await browser.run { [weak self] endpoints in
+                    Trace.log("Wi-Fi Aware browser found: \(endpoints.map { "\($0.device.name ?? "?") (\($0.device.id))" }.joined(separator: ", "))")
                     self?.updateDiscovered(endpoints, browserID: id)
                 }
+                Trace.log("Wi-Fi Aware browser run ended without error")
             } catch {
-                guard !Task.isCancelled, lock.withLock({ browserID == id }) else { return }
+                guard !Task.isCancelled, lock.withLock({ browserID == id }) else {
+                    Trace.log("Wi-Fi Aware browser stopped: \(Task.isCancelled ? "cancelled" : "superseded")")
+                    return
+                }
                 clearDiscovered()
                 reportDiscoveryError(error)
                 do { try await Task.sleep(for: .seconds(3)) } catch { return }
             }
         }
+        Trace.log("Wi-Fi Aware browser stopped: cancelled")
     }
 
     private func hasPairedDevice() async throws -> Bool {
         try await WAPairedDevice.allDevices.current()?.isEmpty == false
     }
 
+    private static func pairedDeviceSummary() async -> String {
+        guard let devices = try? await WAPairedDevice.allDevices.current(), !devices.isEmpty else { return "none" }
+        return devices.values.map { "\($0.name ?? $0.pairingInfo?.pairingName ?? "?") (\($0.id))" }.joined(separator: ", ")
+    }
+
     private func reportDiscoveryError(_ error: Error) {
         log.error("Wi-Fi Aware discovery: \(error.localizedDescription, privacy: .public)")
-        Trace.log("Wi-Fi Aware discovery error: \(error.localizedDescription)")
+        Trace.log("Wi-Fi Aware discovery error: \(describe(error))")
         continuation.yield(.failure("Wi-Fi Aware couldn’t find the other device. Keep both apps open and Wi-Fi on, or choose Automatic connection."))
     }
 
@@ -257,7 +377,6 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
         lock.withLock {
             for endpoint in endpointsByPeerID.values { continuation.yield(.peerLost(peer(for: endpoint))) }
             endpointsByPeerID.removeAll()
-            selectedEndpointsByPeerID.removeAll()
         }
     }
 
@@ -265,8 +384,8 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
 
     public func invite(_ peer: Peer, context: Data?, timeout: TimeInterval) {
         lock.withLock {
-            guard !pairingSuspended,
-                  let endpoint = selectedEndpointsByPeerID.removeValue(forKey: peer.id) ?? endpointsByPeerID[peer.id] else {
+            guard !pairingSuspended, let endpoint = endpointsByPeerID[peer.id] else {
+                Trace.log("Wi-Fi Aware invite refused: \(peer.displayName) is not in the browser's current results")
                 // Models wait for .disconnected to leave their connecting state.
                 continuation.yield(.disconnected(peer))
                 continuation.yield(.failure("That camera is no longer available. Keep Camera open on it and try again."))
@@ -274,14 +393,15 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
             }
             let id = UUID()
             guard session.begin(id: id, peer: peer) else { return }
+            Trace.log("Wi-Fi Aware connecting \(id) to \(peer.displayName) via \(endpoint)")
             continuation.yield(.connecting(peer))
             let previousBrowser = browserTask
             browserID = nil
             browserTask = nil
             previousBrowser?.cancel()
+            if let previousBrowser { retiringTasks.append(previousBrowser) }
             for discovered in endpointsByPeerID.values { continuation.yield(.peerLost(self.peer(for: discovered))) }
             endpointsByPeerID.removeAll()
-            selectedEndpointsByPeerID.removeAll()
             connectionTask = Task { [weak self] in
                 // The browser and the selected connection must not both subscribe to the service.
                 await previousBrowser?.value
@@ -307,7 +427,11 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
         guard accepted else { return }
         connection.onStateUpdate { [weak self] _, state in
             guard let self else { return }
-            Trace.log("Wi-Fi Aware connection \(id): \(String(describing: state))")
+            if case .failed(let error) = state {
+                Trace.log("Wi-Fi Aware connection \(id): failed \(self.describe(error))")
+            } else {
+                Trace.log("Wi-Fi Aware connection \(id): \(String(describing: state))")
+            }
             switch state {
             case .ready:
                 self.lock.withLock {
@@ -318,7 +442,7 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
                     self.continuation.yield(.fileChannelFast(true))
                 }
             case .failed(let error):
-                self.finishSession(id: id, error: error.localizedDescription)
+                self.finishSession(id: id, error: self.describe(error))
             case .cancelled:
                 self.finishSession(id: id)
             default:
@@ -340,24 +464,28 @@ public final class WiFiAwareTransport: PeerTransport, @unchecked Sendable {
     }
 
     private func connectionTimedOut(id: UUID) {
-        let waiting = lock.withLock { session.current?.id == id && session.current?.isReady == false }
-        guard waiting else { return }
-        finishSession(id: id, error: "Connection timed out. Keep both apps open, turn on Wi-Fi, and try again.")
+        // The readiness check and the teardown happen under one lock acquisition, so a `.ready`
+        // that lands in between cannot be torn down by its own timeout.
+        finishSession(id: id, onlyIfUnready: true, error: "Connection timed out. Keep both apps open, turn on Wi-Fi, and try again.")
     }
 
-    private func finishSession(id: UUID, error: String? = nil) {
+    private func finishSession(id: UUID, onlyIfUnready: Bool = false, error: String? = nil) {
         let shouldResumeBrowsing = lock.withLock { () -> Bool in
             let wasReady = session.current?.isReady == true
+            if onlyIfUnready, session.current?.id == id, wasReady { return false }
             guard let peer = session.finish(id: id) else { return false }
+            if error != nil { lastFailureAt = Date() }
             connection = nil
             timeoutTask?.cancel()
             timeoutTask = nil
-            connectionTask?.cancel()
+            // Both possible owners of the connection join the barrier: the next browser or listener
+            // awaits them, so the service is free before it is used again.
+            retire(connectionTask)
             connectionTask = nil
-            // Cancelling the listener also closes its accepted connection, and releases its service
-            // before CameraHostModel starts advertising again after the disconnected event.
+            // Cancelling the listener also closes its accepted connection. The next listener awaits
+            // this one (retiringTasks) so the service is free before it publishes again.
             listenerID = nil
-            listenerTask?.cancel()
+            retire(listenerTask)
             listenerTask = nil
             messageTask?.cancel()
             messageTask = nil

@@ -15,7 +15,12 @@ public final class MultipeerTransport: NSObject, PeerTransport, @unchecked Senda
     private let lock = NSLock()
     private let serviceType: String
     private let myPeerID: MCPeerID
-    private let session: MCSession
+    /// Replaced on every `disconnect()`: an `MCSession` that has been through a disconnect does not
+    /// reliably accept the next invitation, and a reused `MCNearbyServiceBrowser` does not reliably
+    /// report a peer it saw before (seen 2026-10-15: after a reconnect the camera advertised for three
+    /// minutes and the remote never invited). Read it through `currentSession`.
+    private var session: MCSession
+    private var currentSession: MCSession { lock.withLock { session } }
     private var advertiser: MCNearbyServiceAdvertiser?
     private var browser: MCNearbyServiceBrowser?
     private var idsByPeerID: [MCPeerID: String] = [:]
@@ -65,7 +70,7 @@ public final class MultipeerTransport: NSObject, PeerTransport, @unchecked Senda
     // MARK: PeerTransport
 
     public var connectedPeers: [Peer] {
-        session.connectedPeers.map(peer(for:))
+        currentSession.connectedPeers.map(peer(for:))
     }
 
     public func startAdvertising(discoveryInfo: [String: String]) {
@@ -92,13 +97,15 @@ public final class MultipeerTransport: NSObject, PeerTransport, @unchecked Senda
     }
 
     public func startBrowsing() {
-        let browser = lock.withLock { () -> MCNearbyServiceBrowser in
-            if let browser = self.browser { return browser }
-            let browser = MCNearbyServiceBrowser(peer: myPeerID, serviceType: serviceType)
-            browser.delegate = self
+        // A new browser every time, so a camera seen by an earlier browse is reported again.
+        let browser = MCNearbyServiceBrowser(peer: myPeerID, serviceType: serviceType)
+        browser.delegate = self
+        let previous = lock.withLock { () -> MCNearbyServiceBrowser? in
+            let previous = self.browser
             self.browser = browser
-            return browser
+            return previous
         }
+        previous?.stopBrowsingForPeers()
         browser.startBrowsingForPeers()
         log.notice("browsing for peers")
         Trace.log("mc: browsing for peers")
@@ -117,11 +124,11 @@ public final class MultipeerTransport: NSObject, PeerTransport, @unchecked Senda
             return
         }
         Trace.log("mc: inviting \(peerID.displayName) (timeout \(Int(timeout))s)")
-        browser.invitePeer(peerID, to: session, withContext: context, timeout: timeout)
+        browser.invitePeer(peerID, to: currentSession, withContext: context, timeout: timeout)
     }
 
     public func send(_ data: Data, to peers: [Peer]) throws {
-        let peerIDs = lock.withLock { peers.compactMap { peerIDsByID[$0.id] } }
+        let (peerIDs, session) = lock.withLock { (peers.compactMap { peerIDsByID[$0.id] }, self.session) }
         let connected = Set(session.connectedPeers)
         let targets = peerIDs.filter { connected.contains($0) }
         guard !targets.isEmpty else { throw TransportError.notConnected }
@@ -133,7 +140,8 @@ public final class MultipeerTransport: NSObject, PeerTransport, @unchecked Senda
     }
 
     public func sendFile(at url: URL, named name: String, to peer: Peer) {
-        guard let peerID = lock.withLock({ peerIDsByID[peer.id] }), session.connectedPeers.contains(peerID) else {
+        let (peerID, session) = lock.withLock { (peerIDsByID[peer.id], self.session) }
+        guard let peerID, session.connectedPeers.contains(peerID) else {
             continuation.yield(.fileSendFinished(name: name, error: "Not connected"))
             return
         }
@@ -170,7 +178,22 @@ public final class MultipeerTransport: NSObject, PeerTransport, @unchecked Senda
     }
 
     public func disconnect() {
-        session.disconnect()
+        let fresh = MCSession(peer: myPeerID, securityIdentity: nil, encryptionPreference: .required)
+        fresh.delegate = self
+        let old = lock.withLock { () -> MCSession in
+            let old = session
+            session = fresh
+            return old
+        }
+        // Announce the peers the old session is losing ourselves, then silence it: its late state
+        // callbacks must not be mistaken for the fresh session's.
+        let losing = old.connectedPeers
+        old.delegate = nil
+        old.disconnect()
+        for peerID in losing {
+            Trace.log("mc: session \(peerID.displayName) -> notConnected (session retired)")
+            continuation.yield(.disconnected(peer(for: peerID)))
+        }
     }
 
     // MARK: Peer bookkeeping
@@ -234,7 +257,7 @@ extension MultipeerTransport: MCNearbyServiceAdvertiserDelegate {
                            withContext context: Data?, invitationHandler: @escaping (Bool, MCSession?) -> Void) {
         log.notice("invitation from \(peerID.displayName, privacy: .public) contextBytes=\(context?.count ?? -1)")
         Trace.log("mc: invitation from \(peerID.displayName) contextBytes=\(context?.count ?? -1)")
-        let responder = InvitationResponder(session: session, handler: invitationHandler)
+        let responder = InvitationResponder(session: currentSession, handler: invitationHandler)
         continuation.yield(.invitation(from: peer(for: peerID), context: context, respond: { accept in
             responder.respond(accept)
         }))
@@ -244,7 +267,13 @@ extension MultipeerTransport: MCNearbyServiceAdvertiserDelegate {
 extension MultipeerTransport: MCNearbyServiceBrowserDelegate {
     public func browser(_ browser: MCNearbyServiceBrowser, foundPeer peerID: MCPeerID, withDiscoveryInfo info: [String: String]?) {
         var peer = peer(for: peerID)
-        lock.withLock { discoveryInfoByID[peer.id] = info }
+        // Keep the instance THIS browser reported: `invitePeer` on a fresh browser silently ignores an
+        // equal-but-different MCPeerID from an earlier browse (the stable id above is ours, not Apple's).
+        lock.withLock {
+            discoveryInfoByID[peer.id] = info
+            peerIDsByID[peer.id] = peerID
+            idsByPeerID[peerID] = peer.id
+        }
         peer.discoveryInfo = info
         log.notice("found peer \(peerID.displayName, privacy: .public) info=\(String(describing: info), privacy: .public)")
         Trace.log("mc: found peer \(peerID.displayName)")
@@ -265,6 +294,7 @@ extension MultipeerTransport: MCNearbyServiceBrowserDelegate {
 
 extension MultipeerTransport: MCSessionDelegate {
     public func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
+        guard session === currentSession else { return }   // a retired session's late news
         let peer = peer(for: peerID)
         let name: String
         switch state {

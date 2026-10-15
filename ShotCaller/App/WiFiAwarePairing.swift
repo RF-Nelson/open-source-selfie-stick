@@ -1,4 +1,5 @@
-#if os(iOS)
+// Debug-only internal test mode (docs/TRANSPORT.md, 2026-10-10).
+#if os(iOS) && DEBUG
 import ShotCallerCore
 import WiFiAware
 

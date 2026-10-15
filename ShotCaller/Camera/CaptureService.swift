@@ -37,6 +37,13 @@ actor CaptureService: CameraDevice {
     private let session = AVCaptureSession()
     private let photoOutput = AVCapturePhotoOutput()
     private let movieOutput = AVCaptureMovieFileOutput()
+    /// Live view: attached only while a remote holds a subscription (see `setPreviewFramesEnabled`).
+    private let previewOutput = AVCaptureVideoDataOutput()
+    private let previewEncoder = PreviewFrameEncoder()
+    private let previewQueue = DispatchQueue(label: "com.richardnelson.opensourceselfiestick.preview", qos: .userInitiated)
+    /// A detach asked for mid-recording: changing the session configuration would end the movie, so
+    /// the output stays until the recording has finished.
+    private var detachPreviewAfterRecording = false
     private var videoInput: AVCaptureDeviceInput?
     private var audioInput: AVCaptureDeviceInput?
     private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
@@ -81,6 +88,7 @@ actor CaptureService: CameraDevice {
             movieOutput.stopRecording()
         }
         setTorch(false)
+        if !movieOutput.isRecording { try? setPreviewFramesEnabled(false) }
         session.stopRunning()
     }
 
@@ -178,13 +186,92 @@ actor CaptureService: CameraDevice {
         let duration = movieOutput.recordedDuration.seconds
         if movieOutput.isRecording { movieOutput.stopRecording() }
         setTorch(false)
-        defer { movieDelegate = nil }
+        defer {
+            movieDelegate = nil
+            if detachPreviewAfterRecording {
+                detachPreviewAfterRecording = false
+                try? setPreviewFramesEnabled(false)
+            }
+        }
         let url = try await delegate.waitUntilFinished()
         return RecordedMovie(url: url, duration: duration.isFinite ? duration : 0)
     }
 
     func isRecordingWithoutSound() -> Bool {
         movieOutput.isRecording && audioInput == nil
+    }
+
+    // MARK: Live view
+
+    nonisolated var supportsPreviewFrames: Bool { true }
+
+    /// Adds or removes the video data output. Attached, it delivers frames on a serial queue where
+    /// `PreviewFrameEncoder` drops every one nobody asked for. Photo and movie outputs are untouched;
+    /// the photo output's dimensions are re-applied because adding an output can reset them.
+    func setPreviewFramesEnabled(_ enabled: Bool) throws {
+        guard isConfigured else { throw CameraDeviceError.unavailable }
+        let attached = session.outputs.contains(previewOutput)
+        if enabled { detachPreviewAfterRecording = false }
+        guard enabled != attached else { return }
+        // A configuration change during a recording ends the movie (AVFoundation finishes the file).
+        // Starting a live view can wait; ending one must not take the recording down with it.
+        if movieOutput.isRecording || movieDelegate != nil {
+            if enabled { throw CameraDeviceError.failed("Live view can start after this recording.") }
+            detachPreviewAfterRecording = true
+            previewEncoder.cancelPending()
+            return
+        }
+        if enabled {
+            previewOutput.alwaysDiscardsLateVideoFrames = true
+            previewOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarFullRange]
+            session.beginConfiguration()
+            guard session.canAddOutput(previewOutput) else {
+                session.commitConfiguration()
+                throw CameraDeviceError.failed("Live view isn't available with this camera.")
+            }
+            session.addOutput(previewOutput)
+            // A permitted output can still push the session past what the hardware runs; capture
+            // always wins over the optional preview.
+            guard session.hardwareCost < 1 else {
+                session.removeOutput(previewOutput)
+                session.commitConfiguration()
+                throw CameraDeviceError.failed("Live view isn't available with this camera mode.")
+            }
+            session.commitConfiguration()
+            previewOutput.setSampleBufferDelegate(previewEncoder, queue: previewQueue)
+        } else {
+            previewEncoder.cancelPending()
+            previewOutput.setSampleBufferDelegate(nil, queue: nil)
+            session.beginConfiguration()
+            session.removeOutput(previewOutput)
+            session.commitConfiguration()
+        }
+        configurePhotoOutput()
+    }
+
+    /// The preview connection must hand over raw, unrotated, unmirrored buffers: newer devices give
+    /// some video connections a non-zero default rotation, which would double up with the rotation the
+    /// encoder applies. Re-applied whenever connections are recreated (camera flip, mode change).
+    private func normalizePreviewConnection() {
+        guard let connection = previewOutput.connection(with: .video) else { return }
+        if connection.isVideoRotationAngleSupported(0) { connection.videoRotationAngle = 0 }
+        connection.automaticallyAdjustsVideoMirroring = false
+        if connection.isVideoMirroringSupported { connection.isVideoMirrored = false }
+    }
+
+    /// The next frame, rotated the way a capture taken now would be (horizon-level capture angle), so
+    /// the remote sees the composition that will be saved. Not mirrored, for the same reason: the
+    /// saved selfie isn't either, even though the camera's own screen shows it mirrored.
+    func previewFrame(maxEdge: Int, maxBytes: Int) async -> PreviewFrame? {
+        guard session.isRunning, session.outputs.contains(previewOutput) else { return nil }
+        let angle = rotationCoordinator?.videoRotationAngleForHorizonLevelCapture ?? 0
+        let orientation: CGImagePropertyOrientation = switch Int(angle.rounded()) % 360 {
+        case 90: .right
+        case 180: .down
+        case 270: .left
+        default: .up
+        }
+        return await previewEncoder.nextFrame(maxEdge: maxEdge, maxBytes: maxBytes, orientation: orientation, timeout: 1)
     }
 
     func recordingHasFinished() -> Bool {
@@ -244,7 +331,8 @@ actor CaptureService: CameraDevice {
         return CameraCapabilities(
             hasFlash: videoInput?.device.hasFlash ?? false,
             hasFrontCamera: !frontCameras.isEmpty,
-            canRecordVideo: true
+            canRecordVideo: true,
+            canStreamPreview: true
         )
     }
 
@@ -320,12 +408,24 @@ actor CaptureService: CameraDevice {
         case .video:
             session.sessionPreset = .high
             if !session.outputs.contains(movieOutput) {
+                // The optional live-view tap yields to the movie output if the two cannot share the
+                // session; the host notices the missing frames and ends the view with a reason.
+                if !session.canAddOutput(movieOutput), session.outputs.contains(previewOutput) {
+                    previewEncoder.cancelPending()
+                    previewOutput.setSampleBufferDelegate(nil, queue: nil)
+                    session.removeOutput(previewOutput)
+                }
                 guard session.canAddOutput(movieOutput) else {
                     session.sessionPreset = .photo
                     session.commitConfiguration()
                     throw CameraDeviceError.failed("Video recording isn't available on this device.")
                 }
                 session.addOutput(movieOutput)
+                if session.outputs.contains(previewOutput), session.hardwareCost >= 1 {
+                    previewEncoder.cancelPending()
+                    previewOutput.setSampleBufferDelegate(nil, queue: nil)
+                    session.removeOutput(previewOutput)
+                }
             }
             if let connection = movieOutput.connection(with: .video) {
                 if connection.isVideoStabilizationSupported {
@@ -346,6 +446,7 @@ actor CaptureService: CameraDevice {
             photoOutput.maxPhotoDimensions = dimensions
         }
         photoOutput.maxPhotoQualityPrioritization = .quality
+        normalizePreviewConnection()
     }
 
     /// A denied or missing microphone never blocks video: the movie records without an audio track

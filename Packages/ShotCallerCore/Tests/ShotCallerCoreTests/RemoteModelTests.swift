@@ -189,6 +189,7 @@ import Testing
 
     @Test func autoReconnectGivesUpAfterItsBudget() async {
         let model = await connectedModel()
+        model.reconnectAttemptLimit = 3
         transport.emit(.disconnected(camera))   // drop 1 -> reconnect attempt 1
         #expect(await waitUntil { model.isReconnecting && transport.invitations.count == 2 })
         transport.emit(.disconnected(camera))   // attempt 1 fails -> attempt 2
@@ -197,6 +198,81 @@ import Testing
         #expect(await waitUntil { transport.invitations.count == 4 })
         transport.emit(.disconnected(camera))   // attempt 3 fails -> budget exhausted
         #expect(await waitUntil { !model.isReconnecting && model.notice == "The camera disconnected." })
+    }
+
+    @Test func aTimedOutReconnectAttemptKeepsRetrying() async {
+        let model = await connectedModel()
+        model.connectTimeout = 0.05
+        transport.emit(.disconnected(camera))   // drop -> reconnect attempt 1 (never answered)
+        #expect(await waitUntil { model.isReconnecting && transport.invitations.count == 2 })
+        // The camera vanishes while the attempt is pending, so the retry has to wait for rediscovery.
+        transport.emit(.peerLost(camera))
+        _ = await waitUntil { model.cameras.isEmpty }
+        // The attempt times out: still reconnecting, nothing reported yet.
+        try? await Task.sleep(for: .milliseconds(150))
+        #expect(model.connection == .browsing)
+        #expect(model.isReconnecting)
+        #expect(model.notice == nil)
+        #expect(transport.invitations.count == 2)
+        // Attempt 2 goes out as soon as the camera is seen again.
+        transport.emit(.peerFound(camera))
+        #expect(await waitUntil { transport.invitations.count == 3 })
+        #expect(model.isReconnecting)
+    }
+
+    @Test func aLateDisconnectFromATimedOutAttemptStartsTheNextTryOnce() async {
+        let model = await connectedModel()
+        model.connectTimeout = 0.3
+        transport.emit(.disconnected(camera))   // drop -> reconnect attempt 1 (never answered)
+        #expect(await waitUntil { model.isReconnecting && transport.invitations.count == 2 })
+        model.connectTimeout = 30   // attempt 1 keeps its short timeout; attempt 2 stays open
+        // The camera stays discovered. The timeout tears attempt 1 down; the transport's late
+        // `.disconnected` for it must start exactly one new attempt, not count as a fresh failure.
+        #expect(await waitUntil { transport.invitations.count == 3 })
+        #expect(model.isReconnecting)
+        #expect(model.notice == nil)
+        try? await Task.sleep(for: .milliseconds(1200))
+        #expect(transport.invitations.count == 3)
+        #expect(model.connection == .connecting(camera))
+    }
+
+    @Test func rediscoveryDuringATimedOutAttemptsTeardownDoesNotOpenASecondAttempt() async {
+        let model = await connectedModel()
+        model.connectTimeout = 0.3
+        transport.emit(.disconnected(camera))   // drop -> reconnect attempt 1 (never answered)
+        #expect(await waitUntil { model.isReconnecting && transport.invitations.count == 2 })
+        model.connectTimeout = 30
+        transport.emit(.peerLost(camera))
+        _ = await waitUntil { model.cameras.isEmpty }
+        transport.suppressDisconnectEvents = true   // the transport is slow to acknowledge the cancel
+        // Attempt 1 times out, then the camera is rediscovered before the teardown is acknowledged.
+        try? await Task.sleep(for: .milliseconds(400))
+        #expect(model.connection == .browsing)
+        transport.emit(.peerFound(camera))
+        try? await Task.sleep(for: .milliseconds(100))
+        #expect(transport.invitations.count == 2)   // no second attempt yet
+        // The late acknowledgement of attempt 1 starts attempt 2, exactly once.
+        transport.emit(.disconnected(camera))
+        #expect(await waitUntil { transport.invitations.count == 3 })
+        try? await Task.sleep(for: .milliseconds(1200))
+        #expect(transport.invitations.count == 3)
+        #expect(model.connection == .connecting(camera))
+        #expect(model.isReconnecting)
+    }
+
+    @Test func reconnectMatchesTheCameraByIdBeforeName() async {
+        let model = await connectedModel()
+        let impostor = Peer(id: "other", displayName: camera.displayName)
+        transport.emit(.peerLost(camera))
+        transport.emit(.peerFound(impostor))
+        _ = await waitUntil { model.cameras.map(\.id) == ["other"] }
+        transport.emit(.disconnected(camera))   // drop -> reconnect; only the impostor is visible
+        #expect(await waitUntil { model.isReconnecting })
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(transport.invitations.count == 1)   // a same-named camera is not the remembered one
+        transport.emit(.peerFound(camera))
+        #expect(await waitUntil { transport.invitations.count == 2 })
+        #expect(transport.invitations.last?.peer.id == camera.id)
     }
 
     @Test func versionMismatchDisconnects() async throws {

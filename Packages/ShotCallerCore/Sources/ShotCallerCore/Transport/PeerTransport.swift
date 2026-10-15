@@ -33,6 +33,9 @@ public enum TransportEvent: Sendable {
     /// when only the slow (Bluetooth) link is up. The layered transport emits this as its Wi-Fi fast
     /// lane comes and goes; single-channel transports never do, so the link speed stays unknown (nil).
     case fileChannelFast(Bool)
+    /// A live-view packet (`PreviewPacket`) arrived on the preview channel. Only transports with a
+    /// fast lane emit it; it never carries control, and nothing above the transport queues it.
+    case preview(Data, from: Peer)
     case failure(String)
 }
 
@@ -44,6 +47,12 @@ public enum TransportError: Error, Sendable, Equatable {
 public extension PeerTransport {
     func cancelFileSend() {}
     var requiresAppLevelPairing: Bool { true }
+    /// Whether this transport has a separate low-latency channel for live-view packets. Only the
+    /// layered transport does (its Wi-Fi fast lane); it is available only while that lane is up.
+    var supportsPreviewChannel: Bool { false }
+    /// Send one live-view packet on the preview channel. Throws `notConnected` when the channel is
+    /// down; it never falls back to a slower lane.
+    func sendPreview(_ packet: Data, to peer: Peer) throws { throw TransportError.notConnected }
     /// Whether this link can carry full-resolution photos/videos back to the remote. True for Wi-Fi
     /// transports; false for Bluetooth (too slow), so the camera captures and saves locally without
     /// offering to send the file. The layered transport reports true only while its Wi-Fi leg is up.
@@ -62,6 +71,9 @@ public protocol PeerTransport: AnyObject, Sendable {
     /// default extension). Declared here so a call through `any PeerTransport` dispatches to the
     /// conformer's override rather than the extension default.
     var supportsFileTransfer: Bool { get }
+    /// See the default extension. Declared here so `any PeerTransport` dispatches to overrides.
+    var supportsPreviewChannel: Bool { get }
+    func sendPreview(_ packet: Data, to peer: Peer) throws
     /// Single-consumer stream: exactly one owner iterates it.
     var events: AsyncStream<TransportEvent> { get }
     var connectedPeers: [Peer] { get }

@@ -30,17 +30,14 @@ targets:
     dependencies:
       - package: ShotCallerCore
         product: ShotCallerCore
-    entitlements:
-      path: ShotCaller/ShotCaller.entitlements
-      properties:
-        com.apple.developer.wifi-aware:
-          - Publish
-          - Subscribe
+    # Wi-Fi Aware is a Debug-only internal test mode (docs/TRANSPORT.md, 2026-10-10): only Debug
+    # builds carry its entitlement and the WiFiAwareServices declaration. Release ships neither.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.richardnelson.opensourceselfiestick
         PRODUCT_NAME: ShotCaller
         INFOPLIST_FILE: ShotCaller/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Config/ShotCaller-Release.entitlements
         GENERATE_INFOPLIST_FILE: "YES"
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: "YES"
         INFOPLIST_KEY_UILaunchScreen_Generation: "YES"
@@ -53,6 +50,13 @@ targets:
         SWIFT_EMIT_LOC_STRINGS: "YES"
         ENABLE_PREVIEWS: "YES"
         SUPPORTS_MACCATALYST: "NO"
+      configs:
+        Debug:
+          INFOPLIST_FILE: Config/Info-Debug.plist
+          CODE_SIGN_ENTITLEMENTS: ShotCaller/ShotCaller.entitlements
+        Release:
+          INFOPLIST_FILE: ShotCaller/Info.plist
+          CODE_SIGN_ENTITLEMENTS: Config/ShotCaller-Release.entitlements
     scheme:
       testTargets:
         - package: ShotCallerCore/ShotCallerCoreTests

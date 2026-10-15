@@ -44,6 +44,17 @@ public final class CameraHostModel {
     /// The current file-transfer channel while connected: false = Bluetooth only, true = Bluetooth + a
     /// fast Wi-Fi lane. nil when the transport is single-channel (Wi-Fi Aware) or not connected.
     public private(set) var fileChannelFast: Bool?
+    /// The live view a paired remote is receiving, if any. Frames are produced only on request (one
+    /// at a time), only over the Wi-Fi fast lane, and only after the code was proved.
+    public private(set) var previewSubscription: PreviewSubscription?
+    /// What the paired remote wants copies of (it tells us after pairing and on every change). The
+    /// camera's own shutter uses this, so a shot taken at the camera reaches the remote the same way.
+    public private(set) var remoteSendBack = SendBackPreferences()
+    /// Who is receiving the live view: the paired remote's name, for the "Sharing live view" indicator.
+    public var previewViewerName: String? {
+        guard previewSubscription != nil, case .connected(let peer, let info) = link else { return nil }
+        return info?.displayName ?? peer.displayName
+    }
 
     public var lastCapture: CaptureResult? { captures.last }
     /// Original files still waiting for delivery, including queued and active transfers.
@@ -78,9 +89,23 @@ public final class CameraHostModel {
     @ObservationIgnored private let codec = MessageCodec()
     @ObservationIgnored private let appVersion: String
     @ObservationIgnored private let sleep: (@Sendable (Duration) async throws -> Void)?
+    @ObservationIgnored private let thermalState: @Sendable () -> ProcessInfo.ThermalState
+    /// Seconds without a frame request before a live view is dropped as abandoned (a remote that
+    /// locked, crashed or lost the lane without saying stop). Tests shorten it.
+    @ObservationIgnored private let previewLease: TimeInterval
+    @ObservationIgnored private var previewLeaseTask: Task<Void, Never>?
+    @ObservationIgnored private var previewRequestInFlight = false
+    /// The newest frame request not yet served; a request arriving mid-encode replaces it, so the
+    /// remote's latest demand wins and nothing accumulates.
+    @ObservationIgnored private var pendingPreviewSequence: UInt32?
+    @ObservationIgnored private var previewTransition: Task<Void, Never>?
+    @ObservationIgnored private var previewMisses = 0
+    @ObservationIgnored private(set) var previewFramesSent = 0
     @ObservationIgnored private var currentChallenge = PairingChallenge.random()
     @ObservationIgnored private var failedAttempts = 0
-    @ObservationIgnored private var isPaired = false
+    /// True once the connected remote has proved the code (or, on Wi-Fi Aware, as soon as it connects).
+    /// `link.isConnected` alone is not authentication: a remote is connected while it is still proving.
+    public private(set) var isPaired = false
     @ObservationIgnored private var pairingTimeoutTask: Task<Void, Never>?
     @ObservationIgnored private var eventTask: Task<Void, Never>?
     @ObservationIgnored private var captureTask: Task<Void, Never>?
@@ -117,13 +142,17 @@ public final class CameraHostModel {
                 mediaStore: any MediaStore,
                 thumbnails: any ThumbnailMaker = NoThumbnails(),
                 appVersion: String,
-                sleep: (@Sendable (Duration) async throws -> Void)? = nil) {
+                sleep: (@Sendable (Duration) async throws -> Void)? = nil,
+                thermalState: (@Sendable () -> ProcessInfo.ThermalState)? = nil,
+                previewLease: TimeInterval = 10) {
         self.transport = transport
         self.device = device
         self.mediaStore = mediaStore
         self.thumbnails = thumbnails
         self.appVersion = appVersion
         self.sleep = sleep
+        self.thermalState = thermalState ?? { ProcessInfo.processInfo.thermalState }
+        self.previewLease = previewLease
     }
 
     // MARK: Lifecycle
@@ -167,10 +196,11 @@ public final class CameraHostModel {
 
     private func startDevice() async {
         do {
-            let updatedCapabilities = try await device.start()
+            var updatedCapabilities = try await device.start()
             guard isActive else { return }
             try await device.apply(settings)
             guard isActive else { return }
+            updatedCapabilities.canStreamPreview = updatedCapabilities.canStreamPreview || device.supportsPreviewFrames
             capabilities = updatedCapabilities
             availability = .ready
             if link == .none { advertise() }
@@ -198,6 +228,7 @@ public final class CameraHostModel {
             pairingTimeoutTask?.cancel()
             pairingTimeoutTask = nil
             expectsDisconnect = true
+            endPreview(reason: nil, notify: false)
             transport.stopAdvertising()
             transport.disconnect()
             await device.stop()
@@ -260,6 +291,11 @@ public final class CameraHostModel {
         transport.disconnect()
     }
 
+    /// The person at the camera stops the live view; the remote is told why.
+    public func stopSharingPreview() {
+        endPreview(reason: "The camera stopped sharing live view.", notify: true)
+    }
+
     /// Issues a new code, for example when the person holding the camera thinks someone saw the old one.
     public func regenerateCode() {
         pairingCode = .random()
@@ -272,6 +308,21 @@ public final class CameraHostModel {
     /// Runs a command, whether it came from a button on this screen or from the remote.
     public func perform(_ command: RemoteCommand) {
         Task { await execute(command) }
+    }
+
+    /// The camera's own shutter: the same commands a remote would send, with the remote's copy
+    /// preferences applied, so the person at the camera never has to know how delivery works.
+    public func shutter(delay: Int) {
+        if state.countdown != nil {
+            perform(.cancelCountdown)
+            return
+        }
+        switch state.mode {
+        case .photo:
+            perform(.capturePhoto(sendBack: remoteSendBack.photos, delay: delay))
+        case .video:
+            perform(state.isRecording ? .stopRecording : .startRecording(sendBack: remoteSendBack.videos, delay: delay))
+        }
     }
 
     public func dismissNotice() {
@@ -316,8 +367,170 @@ public final class CameraHostModel {
             queueHeldFile(id: id, quality: quality, allowSlow: true)
         case .cancelTransfer(let id):
             cancelHeldSend(id: id)
+        case .startPreview(let request):
+            await enqueuePreviewTransition { [weak self] in await self?.startPreview(request) }.value
+        case .stopPreview(let id):
+            if previewSubscription?.id == id { endPreview(reason: nil, notify: true) }
+        case .setSendBack(let preferences):
+            remoteSendBack = preferences
         case .ping:
             send(.pong)
+        }
+    }
+
+    // MARK: Live view
+
+    /// Every change to the device's frame tap runs through one chain, so a start never races an
+    /// earlier release and an obsolete release can never disable the tap a newer subscription owns.
+    @discardableResult
+    private func enqueuePreviewTransition(_ work: @escaping @MainActor () async -> Void) -> Task<Void, Never> {
+        let previous = previewTransition
+        let task = Task { @MainActor in
+            await previous?.value
+            await work()
+        }
+        previewTransition = task
+        return task
+    }
+
+    /// Accept a live-view request, on clamped terms, when every precondition holds: a paired remote,
+    /// a camera that can produce frames, a transport with a preview channel, and that channel up.
+    /// Bluetooth alone is refused outright: frames never ride the control lane.
+    private func startPreview(_ request: PreviewRequest) async {
+        guard isPaired, case .connected = link else { return }
+        guard capabilities.canStreamPreview, transport.supportsPreviewChannel else {
+            send(.previewRefused(requestID: request.requestID, reason: "This camera can't share a live view."))
+            return
+        }
+        guard fileChannelFast == true else {
+            send(.previewRefused(requestID: request.requestID, reason: PreviewLimits.needsWiFiMessage))
+            return
+        }
+        guard thermalState() != .critical else {
+            send(.previewRefused(requestID: request.requestID, reason: "Live view is off while the camera cools down."))
+            return
+        }
+        if previewSubscription != nil { endPreview(reason: nil, notify: false, releaseDevice: false) }
+        let subscription = PreviewSubscription(
+            requestID: request.requestID,
+            maxEdge: min(max(request.maxEdge, PreviewLimits.minEdge), PreviewLimits.maxEdge),
+            fps: min(max(request.maxFPS, 1), PreviewLimits.maxFPS),
+            maxBytes: min(max(request.maxBytes, PreviewLimits.minBytes), PreviewLimits.maxBytes))
+        do {
+            try await device.setPreviewFramesEnabled(true)
+        } catch {
+            send(.previewRefused(requestID: request.requestID, reason: "Live view isn't available right now. \(Self.describe(error))"))
+            return
+        }
+        // The link may have changed while the device reconfigured. Nobody owns the tap, so release it.
+        guard isPaired, case .connected = link, fileChannelFast == true, previewSubscription == nil else {
+            try? await device.setPreviewFramesEnabled(false)
+            return
+        }
+        previewSubscription = subscription
+        previewMisses = 0
+        armPreviewLease()
+        Trace.log("camera: live view started \(subscription.maxEdge)px/\(subscription.fps)fps/\(subscription.maxBytes)B")
+        send(.previewStarted(subscription))
+    }
+
+    /// Ends the live view locally and, when `notify`, tells the remote (reason nil = not the camera's
+    /// doing: at the remote's request, or an abandoned subscription the remote may simply renew). The
+    /// device's frame tap is released through the transition chain, and only if no newer subscription
+    /// has taken it; `releaseDevice: false` skips that when a replacement is about to re-enable it.
+    private func endPreview(reason: String?, notify: Bool, releaseDevice: Bool = true) {
+        guard let subscription = previewSubscription else { return }
+        previewSubscription = nil
+        previewLeaseTask?.cancel()
+        previewLeaseTask = nil
+        pendingPreviewSequence = nil
+        Trace.log("camera: live view ended\(reason.map { ": " + $0 } ?? "")")
+        if notify { send(.previewEnded(id: subscription.id, reason: reason)) }
+        if releaseDevice {
+            enqueuePreviewTransition { [weak self] in
+                guard let self, self.previewSubscription == nil else { return }
+                try? await self.device.setPreviewFramesEnabled(false)
+            }
+        }
+    }
+
+    private func armPreviewLease() {
+        previewLeaseTask?.cancel()
+        let lease = previewLease
+        previewLeaseTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(lease))
+            guard let self, !Task.isCancelled else { return }
+            // No request for a while: the remote locked, lost the lane, or stalled. No words — a remote
+            // that still wants the view renews it by itself.
+            self.endPreview(reason: nil, notify: true)
+        }
+    }
+
+    private func handlePreviewPacket(_ data: Data) {
+        guard let subscription = previewSubscription,
+              let packet = try? PreviewPacket.decode(data),
+              case .frameRequest(let id, let sequence) = packet, id == subscription.id else { return }
+        armPreviewLease()
+        pendingPreviewSequence = sequence
+        servePreviewRequest()
+    }
+
+    /// Serves the newest outstanding frame request: one encode at a time, yielding to heat and to a
+    /// file transfer. Each answer is a frame or an explicit skip, so the remote is never left waiting;
+    /// a device that produces nothing for ten requests running ends the view with a reason.
+    private func servePreviewRequest() {
+        guard !previewRequestInFlight, let sequence = pendingPreviewSequence,
+              let subscription = previewSubscription, case .connected(let peer, _) = link else { return }
+        pendingPreviewSequence = nil
+        let thermal = thermalState()
+        if thermal == .critical {
+            endPreview(reason: "Live view stopped to keep the camera cool.", notify: true)
+            return
+        }
+        if activeSendID != nil {
+            sendPreviewPacket(.skipped(subscription: subscription.id, sequence: sequence, reason: .transferring), to: peer)
+            return
+        }
+        if thermal == .serious {
+            sendPreviewPacket(.skipped(subscription: subscription.id, sequence: sequence, reason: .thermal), to: peer)
+            return
+        }
+        let maxEdge = thermal == .fair ? min(subscription.maxEdge, PreviewLimits.degradedEdge) : subscription.maxEdge
+        previewRequestInFlight = true
+        Task { [weak self, device] in
+            // A frame the device never delivers must not wedge the loop: give it a deadline and move on.
+            let frame = await FirstResult.of(timeout: .seconds(3)) {
+                await device.previewFrame(maxEdge: maxEdge, maxBytes: subscription.maxBytes)
+            } ?? nil
+            guard let self else { return }
+            self.previewRequestInFlight = false
+            guard self.previewSubscription?.id == subscription.id, case .connected(let peer, _) = self.link else { return }
+            if let frame {
+                self.previewMisses = 0
+                self.previewFramesSent += 1
+                self.sendPreviewPacket(.frame(subscription: subscription.id, sequence: sequence,
+                                              width: UInt16(clamping: frame.width), height: UInt16(clamping: frame.height),
+                                              jpeg: frame.jpeg), to: peer)
+            } else {
+                self.previewMisses += 1
+                if self.previewMisses >= Self.maxPreviewMisses {
+                    self.endPreview(reason: "Live view isn't available in this camera mode.", notify: true)
+                    return
+                }
+                self.sendPreviewPacket(.skipped(subscription: subscription.id, sequence: sequence, reason: .noFrame), to: peer)
+            }
+            self.servePreviewRequest()   // a newer request may have arrived meanwhile
+        }
+    }
+
+    private static let maxPreviewMisses = 10
+
+    private func sendPreviewPacket(_ packet: PreviewPacket, to peer: Peer) {
+        do {
+            try transport.sendPreview(packet.encoded(), to: peer)
+        } catch {
+            // The fast lane is gone; its `.fileChannelFast(false)` ends the subscription properly.
+            Trace.log("camera: live view packet not sent: \(error)")
         }
     }
 
@@ -458,6 +671,7 @@ public final class CameraHostModel {
                 if result.fileAvailable { pendingCaptureIDs.insert(result.id) }
             }
             result.thumbnailJPEG = await thumbnails.thumbnail(forPhoto: photo.data)
+            Trace.log("camera: photo \(result.id) \(photo.data.count) B — sendBack=\(sendBack) fast=\(String(describing: fileChannelFast)) willSend=\(result.willSendFile) deferred=\(result.fileAvailable)")
             captures.append(result)
             // Publish the result before starting the transfer, whose completion can arrive immediately.
             send(.captureFinished(result))
@@ -559,6 +773,7 @@ public final class CameraHostModel {
                 if result.fileAvailable { pendingCaptureIDs.insert(result.id) }
             }
             result.thumbnailJPEG = await thumbnails.thumbnail(forVideoAt: movie.url)
+            Trace.log("camera: video \(result.id) \(size) B \(Int(movie.duration)) s — sendBack=\(pendingVideoSendBack) fast=\(String(describing: fileChannelFast)) willSend=\(result.willSendFile) deferred=\(result.fileAvailable) savedOnCamera=\(result.savedOnCamera == true)")
             if heldFiles[result.id] == nil, unsavedFiles[result.id] == nil {
                 try? FileManager.default.removeItem(at: movie.url)
             }
@@ -566,6 +781,7 @@ public final class CameraHostModel {
             send(.captureFinished(result))
             if result.willSendFile { queueHeldFile(id: result.id) }
         } catch {
+            Trace.log("camera: video failed — \(Self.describe(error))")
             state.isRecording = false
             state.recordingDuration = 0
             let reason = "Couldn't finish the video. \(Self.describe(error))"
@@ -579,7 +795,7 @@ public final class CameraHostModel {
     private func handle(_ event: TransportEvent) {
         switch event {
         case .invitation(let peer, _, let respond):
-            // Accept one remote at a time; the code is verified over the encrypted channel after
+            // Accept one remote at a time; the code is verified over the data channel after
             // connecting (reliable over Bluetooth, unlike discovery info and the invitation context).
             guard isActive, availability == .ready, case .none = link else {
                 respond(false)
@@ -612,6 +828,8 @@ public final class CameraHostModel {
             guard link.peer?.id == peer.id else { return }
             let wasPaired = isPaired
             isPaired = false
+            remoteSendBack = SendBackPreferences()
+            endPreview(reason: nil, notify: false)
             pairingTimeoutTask?.cancel()
             pairingTimeoutTask = nil
             link = .none
@@ -656,7 +874,14 @@ public final class CameraHostModel {
             }
         case .fileChannelFast(let fast):
             fileChannelFast = fast
-            if fast { flushHeldFiles() }
+            if fast {
+                flushHeldFiles()
+            } else {
+                endPreview(reason: PreviewLimits.needsWiFiMessage, notify: true)
+            }
+        case .preview(let data, let peer):
+            guard link.peer?.id == peer.id, isPaired else { return }
+            handlePreviewPacket(data)
         case .failure(let message):
             show(message)
         case .peerFound, .peerLost, .fileReceiveStarted, .fileReceiveProgress, .fileReceived, .fileReceiveFailed:
@@ -729,7 +954,10 @@ public final class CameraHostModel {
     }
 
     private func sendNextHeldFile() {
-        guard activeSendID == nil, !sendQueue.isEmpty, isPaired, case .connected = link else { return }
+        guard activeSendID == nil, !sendQueue.isEmpty, isPaired, case .connected = link else {
+            if !sendQueue.isEmpty { Trace.log("camera: \(sendQueue.count) file(s) queued behind active=\(String(describing: activeSendID)) paired=\(isPaired)") }
+            return
+        }
         let request = sendQueue.removeFirst()
         if !request.allowSlow, fileChannelFast == false {
             pendingCaptureIDs.insert(request.id)

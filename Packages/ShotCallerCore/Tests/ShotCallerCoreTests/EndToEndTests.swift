@@ -110,4 +110,42 @@ import Testing
         remote.shutter()
         #expect(await waitUntil { remoteStore.photos.count == 1 && camera.captures.count == 1 })
     }
+
+    /// A shot taken with the camera's own shutter is delivered the way the remote asked for.
+    @Test func theCamerasOwnShutterHonoursTheRemotesCopyPreferences() async throws {
+        let (cameraTransport, remoteTransport) = FakeTransport.linkedPair(cameraName: "iPhone · A7", remoteName: "Rich's iPad")
+        let device = FakeCameraDevice()
+        let remoteStore = FakeMediaStore()
+        let camera = CameraHostModel(transport: cameraTransport, device: device, mediaStore: FakeMediaStore(), appVersion: "2.0")
+        let remote = RemoteModel(transport: remoteTransport, mediaStore: remoteStore, appVersion: "2.0")
+        remote.sendBackPhotos = false
+        remote.sendBackVideos = true
+        await camera.start()
+        remote.start()
+        #expect(await waitUntil { remote.cameras.count == 1 })
+        remote.connect(to: remote.cameras[0], code: camera.pairingCode)
+        #expect(await waitUntil { remote.connection.isConnected && camera.isPaired })
+        #expect(await waitUntil { camera.remoteSendBack == SendBackPreferences(photos: false, videos: true) })
+
+        // Photo from the camera: kept there, no copy offered (the remote said no photos).
+        camera.shutter(delay: 0)
+        #expect(await waitUntil { remote.captures.count == 1 })
+        #expect(!remote.captures[0].willSendFile && !remote.captures[0].fileAvailable)
+
+        // Video from the camera: sent, because the remote wants videos.
+        camera.perform(.setMode(.video))
+        #expect(await waitUntil { camera.state.mode == .video })
+        camera.shutter(delay: 0)
+        #expect(await waitUntil { camera.state.isRecording })
+        camera.shutter(delay: 0)
+        #expect(await waitUntil { remote.captures.count == 2 && remoteStore.videos.count == 1 })
+
+        // Changing the preference mid-session reaches the camera.
+        remote.sendBackPhotos = true
+        #expect(await waitUntil { camera.remoteSendBack.photos })
+        camera.perform(.setMode(.photo))
+        #expect(await waitUntil { camera.state.mode == .photo })
+        camera.shutter(delay: 0)
+        #expect(await waitUntil { remoteStore.photos.count == 1 })
+    }
 }

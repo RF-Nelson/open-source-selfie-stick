@@ -2,6 +2,14 @@ import ShotCallerCore
 import SwiftUI
 
 /// Liquid Glass on iOS 26, a material below it.
+/// A half-height sheet on iPad opens as a short form sheet that only grows once scrolled (seen
+/// 2026-10-15): iPad sheets open full; iPhone keeps the half-height detent.
+enum Sheets {
+    static var detents: Set<PresentationDetent> {
+        UIDevice.current.userInterfaceIdiom == .pad ? [.large] : [.medium, .large]
+    }
+}
+
 struct GlassBackground: ViewModifier {
     var shape: AnyShape = AnyShape(Circle())
 
@@ -197,10 +205,11 @@ struct ChannelPill: View {
 
 struct CountdownOverlay: View {
     let seconds: Int
+    var size: CGFloat = 180
 
     var body: some View {
         Text("\(seconds)")
-            .font(.numerals(180, weight: .bold))
+            .font(.numerals(size, weight: .bold))
             .monospacedDigit()
             .foregroundStyle(.white)
             .shadow(color: .black.opacity(0.5), radius: 16)
@@ -230,6 +239,86 @@ struct RecordingBadge: View {
             if !large { Capsule().fill(.black.opacity(0.5)) }
         }
         .accessibilityLabel("Recording, \(Int(duration)) seconds")
+    }
+}
+
+/// On the camera while a remote receives the live view: who is watching. Ending it is the same as
+/// ending the session (disconnect the remote); a separate Stop was dropped on 2026-10-11.
+struct LiveViewSharingPill: View {
+    let viewer: String
+
+    var body: some View {
+        StatusPill(text: "Sharing live view with \(viewer)", systemImage: "dot.radiowaves.up.forward", tint: .white)
+    }
+}
+
+/// The remote's live view: the latest frame, aspect-fit, with the status and the camera's countdown
+/// or recording clock over it. Frames are small JPEGs the camera already rotated upright.
+struct LiveViewStage: View {
+    /// The decoded picture (see `LivePreviewPresenter`); `frame` supplies its dimensions.
+    let image: UIImage?
+    let frame: PreviewFrame?
+    let status: RemoteModel.PreviewStatus
+    let state: CameraState?
+
+    private var aspect: CGFloat {
+        guard let frame, frame.width > 0, frame.height > 0 else { return 4.0 / 3.0 }
+        return CGFloat(frame.width) / CGFloat(frame.height)
+    }
+
+    private var isStalled: Bool { status == .stalled }
+
+    private var caption: String? {
+        switch status {
+        case .starting: frame == nil ? "Connecting live view…" : nil
+        case .stalled: "Live view paused"
+        case .paused(let words): words
+        case .live, .off, .unavailable: nil
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Theme.panel)
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .opacity(isStalled ? 0.45 : 1)
+                    .animation(.easeOut(duration: 0.25), value: isStalled)
+            } else if status == .starting {
+                ProgressView().tint(.white)
+            }
+            if let seconds = state?.countdown {
+                CountdownOverlay(seconds: seconds, size: 120)
+            }
+            VStack {
+                HStack {
+                    StatusPill(text: status == .live ? "Live" : (status == .starting ? "Connecting" : "Paused"),
+                               systemImage: status == .live ? "dot.radiowaves.left.and.right" : (status == .starting ? "ellipsis" : "pause.fill"),
+                               tint: status == .live ? Theme.success : Theme.inkMuted)
+                    Spacer()
+                    if let state, state.isRecording {
+                        RecordingBadge(duration: state.recordingDuration)
+                    }
+                }
+                Spacer()
+                if let caption {
+                    Text(caption)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.black.opacity(0.55), in: Capsule())
+                }
+            }
+            .padding(12)
+        }
+        .aspectRatio(aspect, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(.white.opacity(0.12)))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(status == .live ? "Live view from the camera" : (caption ?? "Live view"))
     }
 }
 
@@ -413,35 +502,55 @@ struct CapturePreviewSheet: View {
     let savedHere: Bool
     @Environment(\.dismiss) private var dismiss
 
+    private var duration: String? {
+        capture.duration.map { Duration.seconds(Int($0)).formatted(.time(pattern: .minuteSecond)) }
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
+                    if capture.kind == .video {
+                        // Set expectations before the image: this sheet never plays video.
+                        Label(duration.map { "Still frame from your \($0) video" } ?? "Still frame from your video",
+                              systemImage: "video.fill")
+                            .font(.headline)
+                        Text(savedHere
+                             ? "The app doesn’t play video. Watch it in the Photos app on this device."
+                             : "The app doesn’t play video. Once the original is saved or downloaded, watch it in Photos.")
+                            .foregroundStyle(.secondary)
+                    }
                     if let data = capture.thumbnailJPEG, let image = UIImage(data: data) {
                         Image(uiImage: image)
                             .resizable()
                             .scaledToFit()
                             .clipShape(RoundedRectangle(cornerRadius: 18))
-                            .accessibilityLabel(capture.kind == .video ? "Video thumbnail" : "Photo preview")
+                            .overlay(alignment: .bottomLeading) {
+                                if capture.kind == .video {
+                                    Text("STILL FRAME")
+                                        .font(.caption2.weight(.bold)).tracking(1.2)
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 10).padding(.vertical, 5)
+                                        .background(.black.opacity(0.6), in: Capsule())
+                                        .padding(12)
+                                }
+                            }
+                            .accessibilityLabel(capture.kind == .video ? "Still frame from the video" : "Photo preview")
                     }
-                    Label(savedHere ? "Saved to Photos on this device" : "Preview only on this device",
+                    Label(savedHere ? "Saved to Photos on this device" : "Original not on this device",
                           systemImage: savedHere ? "checkmark.circle" : "photo")
                         .font(.headline)
                     Text(savedHere
                          ? "Open the Photos app to view, edit, or share the original."
                          : "This is a small preview. Check the session’s save or download status for the original.")
                         .foregroundStyle(.secondary)
-                    if capture.kind == .video {
-                        Text("Video playback is available in Photos after the original is saved.")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
                 }
                 .multilineTextAlignment(.center)
                 .padding(24)
                 .frame(maxWidth: 600)
                 .frame(maxWidth: .infinity)
             }
-            .navigationTitle("Last shot")
+            .navigationTitle(capture.kind == .video ? "Last video" : "Last photo")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }

@@ -8,6 +8,9 @@ struct ShotCallerApp: App {
         // WiFiAwareTransport reset it, so Multipeer-only launches accumulated stale lines across runs
         // and made the log ambiguous (e.g. old Wi-Fi Aware "listener" lines bleeding into an MPC run).
         Trace.reset()
+        // Debug only: if the internal Wi-Fi Aware test mode crashed while starting last time, turn it
+        // off before the home screen can offer a role.
+        TransportFactory.recoverIfWiFiAwareCrashed()
     }
 
     var body: some Scene {

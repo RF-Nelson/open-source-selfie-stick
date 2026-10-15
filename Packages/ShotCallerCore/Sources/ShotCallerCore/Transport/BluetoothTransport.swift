@@ -62,6 +62,12 @@ public final class BluetoothTransport: NSObject, PeerTransport, @unchecked Senda
     private var wantsScanning = false
     private var peripheralsByID: [String: CBPeripheral] = [:]
     private var connectingPeripheral: CBPeripheral?
+    /// A connect asked for while the same peripheral was still disconnecting: issued once it is gone.
+    private var deferredConnect: CBPeripheral?
+    /// Fails a connect whose L2CAP channel never opens (the camera app is suspended behind a link iOS
+    /// still considers up), instead of letting the attempt ride out the model's timer.
+    private var channelOpenDeadline: Task<Void, Never>?
+    static let channelOpenTimeout: TimeInterval = 8
 
     // Shared open connection.
     private var streamHandler: L2CAPStreamHandler?
@@ -141,9 +147,31 @@ public final class BluetoothTransport: NSObject, PeerTransport, @unchecked Senda
             return
         }
         lock.withLock { connectingPeripheral = peripheral }
-        Trace.log("ble: connecting to \(peer.displayName)")
+        Trace.log("ble: connecting to \(peer.displayName) (link \(Self.describe(peripheral.state)))")
         continuation.yield(.connecting(peer))
-        central.connect(peripheral, options: nil)
+        switch peripheral.state {
+        case .disconnected:
+            central.connect(peripheral, options: nil)
+        case .connecting:
+            break   // a connect is already pending; it completes when the camera advertises again
+        case .connected, .disconnecting:
+            // Never open a channel over a leftover link: the camera behind it may be suspended and the
+            // open would hang. Drop it and connect afresh once Core Bluetooth reports it gone.
+            lock.withLock { deferredConnect = peripheral }
+            if peripheral.state == .connected { central.cancelPeripheralConnection(peripheral) }
+        @unknown default:
+            central.connect(peripheral, options: nil)
+        }
+    }
+
+    private static func describe(_ state: CBPeripheralState) -> String {
+        switch state {
+        case .disconnected: "disconnected"
+        case .connecting: "connecting"
+        case .connected: "connected"
+        case .disconnecting: "disconnecting"
+        @unknown default: "unknown"
+        }
     }
 
     public func send(_ data: Data, to peers: [Peer]) throws {
@@ -278,7 +306,12 @@ public final class BluetoothTransport: NSObject, PeerTransport, @unchecked Senda
 
     private func handleClose(_ error: Error?) {
         Trace.log("ble: channel closed\(error.map { " (\($0.localizedDescription))" } ?? "")")
+        let (peripheral, central) = lock.withLock { (peripheralForConnectedPeer(), centralManager) }
         tearDownConnection(notify: true)
+        // Central side: the camera closed its channel (it went to the background), but iOS keeps the
+        // Bluetooth link up for a while. Drop it now, so the model's reconnect waits for the camera to
+        // advertise again instead of opening a channel to a suspended app.
+        if let peripheral, let central { central.cancelPeripheralConnection(peripheral) }
     }
 
     /// Route one deframed L2CAP payload by its leading tag byte. Runs on the main run loop (where the
@@ -339,6 +372,8 @@ public final class BluetoothTransport: NSObject, PeerTransport, @unchecked Senda
             let peer = connectedPeer
             connectedPeer = nil
             connectingPeripheral = nil
+            channelOpenDeadline?.cancel()
+            channelOpenDeadline = nil
             return peer
         }
         if notify, let peer { continuation.yield(.disconnected(peer)) }
@@ -451,6 +486,28 @@ extension BluetoothTransport: CBCentralManagerDelegate {
     public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         peripheral.delegate = self
         peripheral.discoverServices([BLEIdentifiers.serviceUUID])
+        let id = peripheral.identifier.uuidString
+        let name = lock.withLock { peripheralsByID[id] }?.name ?? "Camera"
+        let timeout = Self.channelOpenTimeout
+        // Captures only values: the peripheral and manager are looked up again when it fires.
+        let deadline = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(timeout))
+            guard let self, !Task.isCancelled else { return }
+            let target = lock.withLock { () -> (CBPeripheral, CBCentralManager)? in
+                guard connectedPeer == nil, let pending = connectingPeripheral, pending.identifier.uuidString == id,
+                      let central = centralManager else { return nil }
+                connectingPeripheral = nil
+                return (pending, central)
+            }
+            guard let (pending, central) = target else { return }
+            Trace.log("ble: no L2CAP channel \(Int(timeout)) s after connecting — dropping the link")
+            central.cancelPeripheralConnection(pending)
+            continuation.yield(.disconnected(Peer(id: id, displayName: name)))
+        }
+        lock.withLock {
+            channelOpenDeadline?.cancel()
+            channelOpenDeadline = deadline
+        }
     }
 
     public func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
@@ -460,6 +517,18 @@ extension BluetoothTransport: CBCentralManagerDelegate {
 
     public func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
         Trace.log("ble: peripheral disconnected\(error.map { " (\($0.localizedDescription))" } ?? "")")
+        let deferred = lock.withLock { () -> CBPeripheral? in
+            guard deferredConnect === peripheral else { return nil }
+            deferredConnect = nil
+            return peripheral
+        }
+        if let deferred {
+            // The link we were waiting to shed is gone: now connect, pending until the camera advertises.
+            lock.withLock { connectingPeripheral = deferred }
+            Trace.log("ble: stale link gone — connecting afresh")
+            central.connect(deferred, options: nil)
+            return
+        }
         tearDownConnection(notify: true)
     }
 }

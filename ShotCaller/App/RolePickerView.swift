@@ -3,7 +3,9 @@ import SwiftUI
 struct RolePickerView: View {
     let onSelect: (Role) -> Void
     @State private var showPrivacy = false
-    @AppStorage(TransportFactory.wifiAwarePreferenceKey) private var useWiFiAware = false
+    #if DEBUG
+    @AppStorage(TransportFactory.internalWiFiAwareKey) private var internalWiFiAware = false
+    #endif
 
     var body: some View {
         ScrollView {
@@ -15,6 +17,11 @@ struct RolePickerView: View {
                     Text("Two devices. Everyone in the shot.")
                         .font(.body)
                         .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 320)
+                    Text("You’ll need two iPhones or iPads with Shot Caller installed.")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.primary)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 320)
                 }
@@ -33,8 +40,10 @@ struct RolePickerView: View {
                     ) { onSelect(.remote) }
                 }
 
-                connectionOptions
                 HowItWorks()
+                #if DEBUG
+                internalTestOptions
+                #endif
                 Button { showPrivacy = true } label: {
                     Label("Privacy & help", systemImage: "hand.raised")
                         .frame(minHeight: 44)
@@ -48,26 +57,25 @@ struct RolePickerView: View {
         .sheet(isPresented: $showPrivacy) { PrivacyHelpView() }
     }
 
-    private var connectionOptions: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label("Connection", systemImage: "link")
-                .font(.headline)
-            if TransportFactory.wifiAwareSupported {
-                Toggle("Wi-Fi Aware", isOn: $useWiFiAware)
-                Text(useWiFiAware
-                     ? "Choose Wi-Fi Aware on both devices, then follow Apple’s pairing prompt. Both devices need supported hardware and iOS 26 or later."
-                     : "Automatic: Bluetooth connects your devices. Wi-Fi speeds up transfers when available. No internet or account needed.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("Automatic: Bluetooth connects your devices. Wi-Fi speeds up transfers when available. Wi-Fi Aware requires iOS 26 and compatible hardware on both devices.")
+    #if DEBUG
+    /// Debug builds only: the Wi-Fi Aware transport as an internal test mode. Release builds have no
+    /// connection choice at all; see TransportFactory.
+    @ViewBuilder
+    private var internalTestOptions: some View {
+        if TransportFactory.wifiAwareSupported {
+            VStack(alignment: .leading, spacing: 12) {
+                Label("Internal test (Debug build)", systemImage: "wrench.and.screwdriver")
+                    .font(.headline)
+                Toggle("Internal test: Wi-Fi Aware", isOn: $internalWiFiAware)
+                Text("Replaces the normal connection with Apple’s Wi-Fi Aware pairing. Both test devices need this on, iOS 26 and supported hardware. Not in the App Store build.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+            .padding(18)
+            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
         }
-        .padding(18)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 20))
     }
+    #endif
 }
 
 private struct AppMark: View {
@@ -123,7 +131,7 @@ private struct HowItWorks: View {
     private let steps = [
         "Open Shot Caller on both devices.",
         "Choose Camera on one and Remote on the other.",
-        "Choose the camera on the remote, follow the pairing instructions, and take your shot.",
+        "Choose the camera on the remote, enter the code shown on the camera, and take your shot.",
     ]
 
     var body: some View {
@@ -144,7 +152,7 @@ private struct HowItWorks: View {
                         .foregroundStyle(.primary)
                 }
             }
-            Text("Keep both apps open and the devices nearby. For the automatic connection, leave Bluetooth on. Leave Wi-Fi on for faster transfers; a shared Wi-Fi network can help. Videos stay on the camera unless you request copies.")
+            Text("Keep Bluetooth on and Shot Caller open on both devices. Join the same Wi-Fi network for faster photo and video transfers. No internet connection or account is needed. Videos stay on the camera unless you request copies.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .padding(.top, 4)

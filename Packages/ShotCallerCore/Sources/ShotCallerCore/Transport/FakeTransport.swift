@@ -21,6 +21,11 @@ public final class FakeTransport: PeerTransport, @unchecked Sendable {
         public let context: Data?
     }
 
+    public struct SentPreview: Sendable, Equatable {
+        public let data: Data
+        public let peer: Peer
+    }
+
     public let localPeer: Peer
     public let events: AsyncStream<TransportEvent>
 
@@ -28,6 +33,8 @@ public final class FakeTransport: PeerTransport, @unchecked Sendable {
     private let lock = NSLock()
     private var _sentMessages: [SentMessage] = []
     private var _sentFiles: [SentFile] = []
+    private var _sentPreviews: [SentPreview] = []
+    private var _previewChannelAvailable = false
     private var _invitations: [Invitation] = []
     private var _advertisedInfo: [String: String]?
     private var _isAdvertising = false
@@ -52,6 +59,14 @@ public final class FakeTransport: PeerTransport, @unchecked Sendable {
 
     public var sentMessages: [SentMessage] { lock.withLock { _sentMessages } }
     public var sentFiles: [SentFile] { lock.withLock { _sentFiles } }
+    public var sentPreviews: [SentPreview] { lock.withLock { _sentPreviews } }
+    /// Models the layered transport's Wi-Fi fast lane: `sendPreview` works only while this is true.
+    /// Tests pair it with an emitted `.fileChannelFast(true)`.
+    public var previewChannelAvailable: Bool {
+        get { lock.withLock { _previewChannelAvailable } }
+        set { lock.withLock { _previewChannelAvailable = newValue } }
+    }
+    public var supportsPreviewChannel: Bool { true }
     public var invitations: [Invitation] { lock.withLock { _invitations } }
     public var advertisedInfo: [String: String]? { lock.withLock { _advertisedInfo } }
     public var isAdvertising: Bool { lock.withLock { _isAdvertising } }
@@ -136,6 +151,13 @@ public final class FakeTransport: PeerTransport, @unchecked Sendable {
         }
     }
 
+    public func sendPreview(_ packet: Data, to peer: Peer) throws {
+        guard previewChannelAvailable, connectedPeers.contains(where: { $0.id == peer.id }) else { throw TransportError.notConnected }
+        lock.withLock { _sentPreviews.append(SentPreview(data: packet, peer: peer)) }
+        guard let link, peer.id == link.localPeer.id, link.previewChannelAvailable else { return }
+        link.continuation.yield(.preview(packet, from: localPeer))
+    }
+
     public func sendFile(at url: URL, named name: String, to peer: Peer) {
         lock.withLock { _sentFiles.append(SentFile(url: url, name: name, peer: peer)) }
         guard let link, peer.id == link.localPeer.id else {
@@ -156,14 +178,22 @@ public final class FakeTransport: PeerTransport, @unchecked Sendable {
         }
     }
 
+    /// Tests set this to model a transport whose `.disconnected` for a cancelled attempt arrives late
+    /// (or never); they emit the event themselves when they want it delivered.
+    public var suppressDisconnectEvents: Bool {
+        get { lock.withLock { _suppressDisconnectEvents } }
+        set { lock.withLock { _suppressDisconnectEvents = newValue } }
+    }
+    private var _suppressDisconnectEvents = false
+
     public func disconnect() {
-        let peers = lock.withLock { () -> [Peer] in
+        let (peers, suppressed) = lock.withLock { () -> ([Peer], Bool) in
             let peers = _connected
             _connected = []
-            return peers
+            return (peers, _suppressDisconnectEvents)
         }
         for peer in peers {
-            continuation.yield(.disconnected(peer))
+            if !suppressed { continuation.yield(.disconnected(peer)) }
             link?.markDisconnected(localPeer)
         }
     }

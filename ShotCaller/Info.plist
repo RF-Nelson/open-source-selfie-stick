@@ -14,9 +14,9 @@
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Shot Caller uses Bluetooth to find a nearby camera or remote and send camera controls between your devices.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>Shot Caller uses this device's camera to take photos and videos when you or your paired remote press the shutter.</string>
+	<string>Shot Caller uses this device's camera to take photos and videos when you or your paired remote press the shutter, and to show your paired remote a live view of what the camera sees.</string>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Shot Caller connects your nearby devices over Wi-Fi to transfer photos and videos faster.</string>
+	<string>Shot Caller connects your nearby devices over Wi-Fi to transfer photos and videos faster and to show the remote a live view.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Shot Caller uses the microphone to record sound when you record a video on this device.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
@@ -38,15 +38,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>WiFiAwareServices</key>
-	<dict>
-		<key>_shotcaller._udp</key>
-		<dict>
-			<key>Publishable</key>
-			<dict/>
-			<key>Subscribable</key>
-			<dict/>
-		</dict>
-	</dict>
 </dict>
 </plist>

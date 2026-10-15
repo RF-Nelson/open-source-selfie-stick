@@ -47,7 +47,9 @@ struct CameraScreen: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var localTimer = 0
     @State private var zoomBase: CGFloat = 1
+    #if DEBUG
     @State private var pairingState = WiFiAwarePairingState()
+    #endif
     @Environment(PhotoLibraryAccess.self) private var photoAccess
 
     var body: some View {
@@ -68,14 +70,18 @@ struct CameraScreen: View {
             self.stack = stack
             stack.model.keepsCopies = UserDefaults.standard.object(forKey: SessionPreferences.keepsCopies) as? Bool ?? true
             await stack.model.start()
+            #if DEBUG
             if !stack.model.usesCodePairing {
                 pairingState.start(transport: stack.transport, automaticallyFinishPairing: true)
             }
+            #endif
             TransportFactory.markStarted()
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
+            #if DEBUG
             pairingState.stop()
+            #endif
             let pending = lifecycleTask
             if let stack { Task { await pending?.value; await stack.model.stop() } }
         }
@@ -86,7 +92,9 @@ struct CameraScreen: View {
             lifecycleTask = Task {
                 await pending?.value
                 if phase == .background {
+                    #if DEBUG
                     pairingState.stop()
+                    #endif
                     await stack.model.suspend()
                 } else if phase == .active {
                     photoAccess.refresh()
@@ -94,9 +102,11 @@ struct CameraScreen: View {
                     if photoAccess.isGranted && stack.model.keepsCopies {
                         await stack.model.retrySavingCaptures()
                     }
+                    #if DEBUG
                     if !stack.model.usesCodePairing {
                         pairingState.start(transport: stack.transport, automaticallyFinishPairing: true)
                     }
+                    #endif
                 }
             }
         }
@@ -128,8 +138,17 @@ struct CameraScreen: View {
     private func content(_ stack: CameraStack) -> some View {
         let model = stack.model
         let state = model.state
+        // The viewfinder and its controls appear once a remote is connected. A recording that outlives
+        // its remote keeps them, so Stop is always reachable; a capture still starting or finishing
+        // (`isBusy`) keeps them too, so a disconnect mid-operation cannot flash the waiting room.
+        // `isPaired` rather than `link.isConnected`: a remote that is still proving the code is
+        // connected but not yet trusted, and must not reveal the viewfinder.
+        let connected = (model.link.isConnected && model.isPaired) || state.isRecording || state.isBusy
         ZStack {
-            if let preview = stack.preview {
+            if !connected {
+                // Nothing to shoot with yet: no viewfinder until a remote is connected.
+                Theme.canvas.ignoresSafeArea()
+            } else if let preview = stack.preview {
                 CameraPreviewView(source: preview, position: state.position, controller: stack.previewController)
                     .ignoresSafeArea()
                     .onTapGesture(coordinateSpace: .local) { location in
@@ -152,6 +171,8 @@ struct CameraScreen: View {
 
             if case .unavailable(let reason) = model.availability {
                 CameraUnavailableView(reason: reason, onRetry: { Task { await model.retryCamera() } }, onClose: close)
+            } else if !connected {
+                waitingRoom(model)
             } else {
                 GeometryReader { geometry in
                     let wide = geometry.size.width > geometry.size.height
@@ -165,7 +186,6 @@ struct CameraScreen: View {
                         }
                         if wide {
                             HStack(alignment: .bottom, spacing: 24) {
-                                ScrollView { pairingPanel(model) }.frame(maxWidth: 360)
                                 Spacer(minLength: 0)
                                 ScrollView {
                                     VStack(spacing: 12) {
@@ -177,7 +197,6 @@ struct CameraScreen: View {
                         } else {
                             ScrollView {
                                 VStack(spacing: 16) {
-                                    pairingPanel(model)
                                     TransferBannerHost(transfer: model.outgoingTransfer)
                                     bottomBar(model)
                                 }
@@ -200,6 +219,9 @@ struct CameraScreen: View {
                 if state.isRecording {
                     RecordingBadge(duration: state.recordingDuration)
                 }
+                if let viewer = model.previewViewerName {
+                    LiveViewSharingPill(viewer: viewer)
+                }
                 if let notice = model.notice {
                     NoticeToast(text: notice)
                         .onTapGesture { model.dismissNotice() }
@@ -210,7 +232,8 @@ struct CameraScreen: View {
             .animation(.easeOut(duration: 0.2), value: model.notice)
         }
         .onCameraCaptureEvent { event in
-            if event.phase == .ended { shutter(model) }
+            // The hardware shutter does nothing while there is no viewfinder.
+            if event.phase == .ended, connected { shutter(model) }
         }
         .sheet(isPresented: $showSettings) {
             CameraSettingsSheet(model: model)
@@ -227,37 +250,108 @@ struct CameraScreen: View {
         }
     }
 
-    @ViewBuilder
-    private func pairingPanel(_ model: CameraHostModel) -> some View {
-        if !model.link.isConnected, model.availability == .ready {
-            if model.usesCodePairing {
-                PairingCard(model: model)
-            } else if #available(iOS 26.0, *) {
-                VStack(spacing: 12) {
-                    if pairingState.isLoading {
-                        ProgressView("Checking paired devices…").tint(.white)
-                    } else if pairingState.isPairing {
-                        CameraPairButton()
-                            .onDisappear { pairingState.pairingControlDidDisappear() }
-                        Button("Done pairing") { pairingState.endPairing() }
-                            .buttonStyle(.bordered).tint(.white)
+    /// Everything the camera shows before a remote is connected. The whole screen is about getting
+    /// a remote connected: no viewfinder, no capture controls.
+    private func waitingRoom(_ model: CameraHostModel) -> some View {
+        VStack(spacing: 8) {
+            topBar(model)
+            if photoAccess.isDenied && model.keepsCopies {
+                PhotoAccessWarning(access: photoAccess)
+            }
+            PendingSavesBanner(count: model.unsavedCaptureCount) {
+                Task { await model.retrySavingCaptures() }
+            }
+            ScrollView {
+                VStack(spacing: 20) {
+                    if model.availability == .starting {
+                        ProgressView("Starting the camera…").tint(.white).foregroundStyle(.white)
+                    } else if model.usesCodePairing {
+                        codeWaiting(model)
                     } else {
-                        Label(pairingState.hasPaired ? "Ready for your remote" : "Pair a remote to connect", systemImage: "wifi")
-                            .font(.headline).foregroundStyle(.white)
-                        Text("Choose this camera on the paired remote, or pair another device.")
-                            .font(.footnote).foregroundStyle(Theme.inkMuted).multilineTextAlignment(.center)
-                        Button(pairingState.hasPaired ? "Pair another remote" : "Pair a remote") { pairingState.beginPairing() }
-                            .buttonStyle(.borderedProminent)
-                    }
-                    if let error = pairingState.error {
-                        Text(error).font(.footnote).foregroundStyle(.yellow)
+                        #if DEBUG
+                        if #available(iOS 26.0, *) { wifiAwareWaiting(model) }
+                        #endif
                     }
                 }
-                .padding(12)
-                .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 20))
+                .padding(24)
+                .frame(maxWidth: 440)
+                .frame(maxWidth: .infinity)
+                .padding(.top, 24)
             }
         }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 12)
     }
+
+    @ViewBuilder
+    private func codeWaiting(_ model: CameraHostModel) -> some View {
+        WaitingHeader(title: "Waiting for a remote", systemImage: "dot.radiowaves.left.and.right")
+        Text(model.pairingCode.digits.map(String.init).joined(separator: " "))
+            .font(.numerals(64, weight: .bold))
+            .monospacedDigit()
+            .foregroundStyle(.white)
+            .accessibilityLabel("Pairing code \(model.pairingCode.digits.map(String.init).joined(separator: " "))")
+        Text("On the other device choose Remote, pick “\(model.localName)”, and enter this code.")
+            .font(.body)
+            .foregroundStyle(Theme.inkMuted)
+            .multilineTextAlignment(.center)
+        Text("The viewfinder and shutter appear when a remote connects.")
+            .font(.footnote)
+            .foregroundStyle(Theme.inkMuted)
+            .multilineTextAlignment(.center)
+        if case .connecting = model.link {
+            ConnectingRow()
+        }
+    }
+
+    #if DEBUG
+    @available(iOS 26.0, *)
+    @ViewBuilder
+    private func wifiAwareWaiting(_ model: CameraHostModel) -> some View {
+        if pairingState.isLoading {
+            ProgressView("Checking paired devices…").tint(.white).foregroundStyle(.white)
+        } else if pairingState.isPairing {
+            WaitingHeader(title: "Pair your remote", systemImage: "dot.radiowaves.left.and.right")
+            CameraPairButton()
+                .onDisappear { pairingState.pairingControlDidDisappear() }
+            Text(pairingState.hasPaired
+                 ? "Tap Pair remote, then on the remote tap Pair camera and choose this device in Apple’s prompt. After pairing, close Apple’s panel and tap Done pairing if this screen is still showing."
+                 : "Tap Pair remote, then on the remote tap Pair camera and choose this device in Apple’s prompt. This screen continues by itself once they are paired.")
+                .font(.body)
+                .foregroundStyle(Theme.inkMuted)
+                .multilineTextAlignment(.center)
+            if pairingState.hasPaired {
+                Button("Done pairing") { pairingState.endPairing() }
+                    .buttonStyle(.bordered).tint(.white)
+            }
+        } else if pairingState.hasPaired {
+            WaitingHeader(title: "Waiting for your remote", systemImage: "wifi")
+            Text("On the remote, choose this device from its camera list. Keep both apps open.")
+                .font(.body)
+                .foregroundStyle(Theme.inkMuted)
+                .multilineTextAlignment(.center)
+            if case .connecting = model.link {
+                ConnectingRow()
+            }
+            Button("Pair a different remote") { pairingState.beginPairing() }
+                .buttonStyle(.bordered).tint(.white)
+                .padding(.top, 12)
+        } else {
+            WaitingHeader(title: "Pair your remote", systemImage: "dot.radiowaves.left.and.right")
+            Button { pairingState.beginPairing() } label: {
+                PairButtonLabel(title: "Pair remote", systemImage: "dot.radiowaves.left.and.right")
+            }
+            .buttonStyle(.plain)
+            Text("A remote connects only after Apple pairs the two devices.")
+                .font(.body)
+                .foregroundStyle(Theme.inkMuted)
+                .multilineTextAlignment(.center)
+        }
+        if let error = pairingState.error {
+            Text(error).font(.footnote).foregroundStyle(.yellow).multilineTextAlignment(.center)
+        }
+    }
+    #endif
 
     private func topBar(_ model: CameraHostModel) -> some View {
         HStack(spacing: 8) {
@@ -284,7 +378,9 @@ struct CameraScreen: View {
     private func finishAndClose(discardUnsaved: Bool) {
         guard !isClosing else { return }
         isClosing = true
+        #if DEBUG
         pairingState.stop()
+        #endif
         let pending = lifecycleTask
         Task {
             await pending?.value
@@ -294,9 +390,11 @@ struct CameraScreen: View {
                 // Finishing a recording can discover a new save failure after Close was tapped.
                 // Keep its original until the person retries or explicitly chooses to discard it.
                 await model.resume()
+                #if DEBUG
                 if !model.usesCodePairing {
                     pairingState.start(transport: stack.transport, automaticallyFinishPairing: true)
                 }
+                #endif
                 isClosing = false
                 confirmClose = true
                 return
@@ -363,51 +461,34 @@ struct CameraScreen: View {
     }
 
     private func shutter(_ model: CameraHostModel) {
-        let state = model.state
-        if state.countdown != nil {
-            model.perform(.cancelCountdown)
-            return
-        }
-        switch state.mode {
-        case .photo:
-            model.perform(.capturePhoto(sendBack: false, delay: localTimer))
-        case .video:
-            model.perform(state.isRecording ? .stopRecording : .startRecording(sendBack: false, delay: localTimer))
+        model.shutter(delay: localTimer)   // honours the remote's copy preferences
+    }
+}
+
+private struct WaitingHeader: View {
+    let title: String
+    let systemImage: String
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.system(size: 44))
+                .foregroundStyle(Theme.inkMuted)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.title2.bold())
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.center)
         }
     }
 }
 
-private struct PairingCard: View {
-    let model: CameraHostModel
-
+private struct ConnectingRow: View {
     var body: some View {
-        VStack(spacing: 10) {
-            Text("Pair a remote")
-                .font(.caption.weight(.bold))
-                .textCase(.uppercase)
-                .tracking(1.4)
-                .foregroundStyle(Theme.inkMuted)
-            Text(model.pairingCode.digits.map(String.init).joined(separator: " "))
-                .font(.numerals(48, weight: .bold))
-                .monospacedDigit()
-                .foregroundStyle(.white)
-                .accessibilityLabel("Pairing code \(model.pairingCode.digits.map(String.init).joined(separator: " "))")
-            Text("On the other device choose Remote, pick “\(model.localName)”, and enter this code.")
-                .font(.footnote)
-                .foregroundStyle(Theme.inkMuted)
-                .multilineTextAlignment(.center)
-            if case .connecting = model.link {
-                HStack(spacing: 8) {
-                    ProgressView().tint(.white)
-                    Text("Connecting…").font(.footnote.weight(.semibold)).foregroundStyle(.white)
-                }
-                .padding(.top, 4)
-            }
+        HStack(spacing: 8) {
+            ProgressView().tint(.white)
+            Text("Connecting…").font(.subheadline.weight(.semibold)).foregroundStyle(.white)
         }
-        .padding(20)
-        .frame(maxWidth: 360)
-        .background(.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(.white.opacity(0.12)))
     }
 }
 
@@ -482,9 +563,17 @@ private struct CameraSettingsSheet: View {
                     }
                 }
                 Section("Connection") {
-                    Text(model.usesCodePairing ? "Automatic · Bluetooth and Wi-Fi" : "Wi-Fi Aware")
-                    Text("To change the connection, close this session and choose the same option on both home screens.")
+                    #if DEBUG
+                    Text(model.usesCodePairing ? "Bluetooth and Wi-Fi" : "Internal test: Wi-Fi Aware")
+                    Text(model.usesCodePairing
+                         ? "Bluetooth connects your devices. Join the same Wi-Fi network for faster photo and video transfers."
+                         : "Debug-only test mode. Turn it on on both supported test devices; turn it off on both to test the shipping connection.")
                         .font(.footnote).foregroundStyle(.secondary)
+                    #else
+                    Text("Bluetooth and Wi-Fi")
+                    Text("Bluetooth connects your devices. Join the same Wi-Fi network for faster photo and video transfers.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    #endif
                 }
                 Section {
                     TextField("Nickname", text: $nickname)
@@ -507,6 +596,6 @@ private struct CameraSettingsSheet: View {
             UserDefaults.standard.set(value, forKey: SessionPreferences.keepsCopies)
             if value { Task { await photoAccess.requestIfNeeded() } }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents(Sheets.detents)
     }
 }

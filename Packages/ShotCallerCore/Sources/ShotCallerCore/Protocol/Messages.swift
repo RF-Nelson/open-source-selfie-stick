@@ -3,7 +3,7 @@ import Foundation
 /// Facts about the wire protocol that both roles must agree on.
 public enum WireProtocol {
     /// Bump when a change breaks older peers. Peers with a different version refuse to talk.
-    public static let version = 3
+    public static let version = 4
     /// Bonjour service type used for discovery: 1–15 characters, lowercase letters, digits, hyphens.
     public static let serviceType = "shotcaller"
     /// The entries the app must declare under `NSBonjourServices` in Info.plist.
@@ -34,11 +34,14 @@ public struct CameraCapabilities: Codable, Sendable, Hashable {
     public var hasFlash: Bool
     public var hasFrontCamera: Bool
     public var canRecordVideo: Bool
+    /// The camera can stream small live-view frames (needs the transport's preview channel too).
+    public var canStreamPreview: Bool
 
-    public init(hasFlash: Bool = false, hasFrontCamera: Bool = false, canRecordVideo: Bool = false) {
+    public init(hasFlash: Bool = false, hasFrontCamera: Bool = false, canRecordVideo: Bool = false, canStreamPreview: Bool = false) {
         self.hasFlash = hasFlash
         self.hasFrontCamera = hasFrontCamera
         self.canRecordVideo = canRecordVideo
+        self.canStreamPreview = canStreamPreview
     }
 }
 
@@ -58,7 +61,7 @@ public struct HelloInfo: Codable, Sendable, Hashable {
     }
 }
 
-/// The remote's answer to the camera's pairing challenge, sent over the encrypted data channel.
+/// The remote's answer to the camera's pairing challenge, sent over the data channel.
 public struct PairingSubmission: Codable, Sendable, Hashable {
     public var proof: Data
     public var displayName: String
@@ -160,6 +163,18 @@ public struct CaptureResult: Codable, Sendable, Hashable, Identifiable {
     }
 }
 
+/// Which captures the remote wants copies of. Sent after pairing and whenever the person changes it,
+/// so a shutter pressed on the camera itself sends (or defers) the file the same way the remote's would.
+public struct SendBackPreferences: Codable, Sendable, Hashable {
+    public var photos: Bool
+    public var videos: Bool
+
+    public init(photos: Bool = false, videos: Bool = false) {
+        self.photos = photos
+        self.videos = videos
+    }
+}
+
 /// Remote → camera.
 public enum RemoteCommand: Codable, Sendable, Hashable {
     /// The remote proves it knows the pairing code (in answer to `CameraEvent.challenge`).
@@ -176,6 +191,11 @@ public enum RemoteCommand: Codable, Sendable, Hashable {
     case requestFile(id: UUID, quality: TransferQuality)
     /// Abort an in-flight or pending file transfer for this capture.
     case cancelTransfer(id: UUID)
+    /// Ask for a live view. The camera answers `previewStarted` or `previewRefused`; frames then
+    /// travel as `PreviewPacket`s on the transport's preview channel, one per request.
+    case startPreview(PreviewRequest)
+    case stopPreview(id: UUID)
+    case setSendBack(SendBackPreferences)
     case ping
 }
 
@@ -189,6 +209,12 @@ public enum CameraEvent: Codable, Sendable, Hashable {
     case captureFinished(CaptureResult)
     case captureFailed(reason: String)
     case rejected(reason: String)
+    /// The camera accepted a live-view request on these (clamped) terms.
+    case previewStarted(PreviewSubscription)
+    /// The camera will not stream right now; `reason` is shown to the person holding the remote.
+    case previewRefused(requestID: UUID, reason: String)
+    /// A live view ended. `reason` is nil when the remote asked for it, otherwise user-facing words.
+    case previewEnded(id: UUID, reason: String?)
     case pong
 }
 
