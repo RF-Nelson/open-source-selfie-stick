@@ -1,0 +1,9 @@
+title: Shot Caller
+description: Turn one iPhone or iPad into a camera and another into its remote.
+theme: jekyll-theme-primer
+exclude:
+  - reviews
+  - TODO.md
+  - TRANSPORT.md
+  - DESIGN.md
+  - APP_STORE_RELEASE.md
