@@ -109,13 +109,17 @@ the camera that explains it — fixed by syncing the remote's copy preferences t
 (`setSendBack`); capture/send decisions are now traced. Verified by Rich the same evening ("It worked"); TestFlight
 202610151606 carries it.
 
-**Submission readiness (2026-10-15):** the ASC record (1084487132) still has only version 1.0 from 2016 with
-its 2016 screenshot sets; a 2.0 version must be created with new metadata, 6.9" iPhone and 13" iPad
-screenshots, the privacy questionnaire (Data Not Collected), age rating, and the review note from
-APP_STORE_RELEASE.md. The internal-only TestFlight builds cannot be submitted; the App Store build comes
-from `Tools/app-store-archive.sh` + an upload with `Tools/ExportOptions-AppStore.plist`. The account has two
-other apps WAITING_FOR_REVIEW (Goatacorn Goes to Japan!, Goatacorn 2.0): the ship-app-store cadence rule
-says one app in review at a time, so Shot Caller is submitted only after those clear.
+**Submission readiness (2026-10-15, evening):** done through the ASC API and the agent browser — version
+2.0 created (id 5f9e36e7-0436-4927-a878-858452f1b48e) with the name "Shot Caller: Camera Remote", subtitle,
+categories, description, keywords, promotional text, what's new, copyright, support/marketing/privacy URLs
+(GitHub Pages, live), the review note (two devices, six steps), review contact carried over with no demo
+account, the age-rating questionnaire re-answered (4+), App Privacy published as Data Not Collected, and
+the App Store build 202610151616 (commit c2f9da7, `Tools/app-store-archive.sh` then an upload export)
+attached. **Still missing: screenshots** — 6.9" iPhone (1320×2868, native on the iPhone 17 Pro Max) and
+13" iPad (2064×2752; the 11" iPad's 1668×2388 captures go through a compositor frame). No demo video
+(Rich's call). **Do not submit yet:** two other apps are WAITING_FOR_REVIEW (Goatacorn Goes to Japan!,
+Goatacorn 2.0); the ship-app-store cadence rule is one app in review at a time, and `asc.mjs submit`
+refuses while the queue is busy.
 
 **Hardware still to do, in this order** (rows also in APP_STORE_RELEASE.md): the other role direction
 and iPhone↔iPhone; rotation and handedness for both

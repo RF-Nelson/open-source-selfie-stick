@@ -12,7 +12,7 @@ Last reviewed: September 16, 2026. These checks prepare a submission; they do no
 
 ## Owner actions before submission
 
-1. Publish `PRIVACY.md` and `SUPPORT.md` at stable, publicly accessible HTTPS URLs. A repository file URL is usable only once the file is actually available publicly. Verify both links while signed out and enter them in App Store Connect. The app currently offers the existing public GitHub issues page for support; confirm the maintainer will monitor it and add a private contact route if needed. Do not submit placeholder URLs or unmonitored contact details.
+1. ~~Publish `PRIVACY.md` and `SUPPORT.md` at stable, publicly accessible HTTPS URLs.~~ Done 2026-10-15: GitHub Pages serves them (see Listing above); verified with curl while signed out and entered in App Store Connect. The app currently offers the existing public GitHub issues page for support; confirm the maintainer will monitor it and add a private contact route if needed. Do not submit placeholder URLs or unmonitored contact details.
 2. Complete the privacy questionnaire for the exact release binary. The current implementation supports **Data Not Collected**: captures go directly to the user's paired device, not to the developer or an SDK vendor. This is an assessment based on Apple's collection definition, not an automatic result of the manifest. Reassess if support uploads, analytics, or remote services are added.
 3. Confirm the registered bundle ID is `com.richardnelson.opensourceselfiestick` on the existing listing. The Release build signs with an empty entitlements file (`Config/ShotCaller-Release.entitlements`); the App ID may keep the Wi-Fi Aware capability for Debug builds, but the distribution profile must not be required to carry it. Confirm the app name **Shot Caller**, developer contact, copyright, territories, pricing, updated age rating questionnaire, and any required trader-status information in the account. Keep the review contact private in App Store Connect.
 4. Capture current, accurate iPhone and iPad screenshots of the real app. The store description must say that remote use needs two compatible devices. Do not mention Wi-Fi Aware: the shipping build has no such option (decided 2026-10-10, see TRANSPORT.md). Do not promise universal range, instant transfers, or hardware validation that hasn't happened.
@@ -69,6 +69,50 @@ Record device models, OS versions, app build, connection method, and the result 
 | Release upgrade and clean install | Policy loads offline, support link opens, no `transport.log` is newly written, and old preferences don't trap startup. |
 
 Apple lists supported Wi-Fi Aware hardware in the [framework documentation](https://developer.apple.com/documentation/WiFiAware); use the app's runtime support check instead of assuming support from the model name.
+
+## Listing (version 2.0, entered in App Store Connect on 2026-10-15 through the API; this is the file of record)
+
+| Field | Value |
+| --- | --- |
+| Name | Shot Caller: Camera Remote |
+| Subtitle | Camera remote for two devices |
+| Categories | Photo & Video, Utilities |
+| Support URL | https://rf-nelson.github.io/open-source-selfie-stick/SUPPORT.html |
+| Marketing URL | https://rf-nelson.github.io/open-source-selfie-stick/ |
+| Privacy policy URL | https://rf-nelson.github.io/open-source-selfie-stick/PRIVACY.html |
+| Copyright | © 2026 Richard Nelson |
+| Keywords | `camera remote,selfie,remote shutter,self timer,group photo,tripod,live view,ipad camera,bluetooth` |
+| Promotional text | Set one device down as the camera and keep the other in your hand as the remote. Live view, countdown, flash and video, with copies delivered straight to you. |
+| Release | automatically after approval; no demo account |
+
+**Description:**
+
+> Shot Caller turns one iPhone or iPad into a camera and another into its remote control. Set the camera down, step into the shot, and take the picture from the device in your hand.
+> 
+> TWO ROLES, ONE CODE
+> Choose Camera on one device and Remote on the other. Type the four-digit code shown on the camera and you're connected. No account and nothing else to set up. Two devices running iOS or iPadOS 18 or later are required.
+> 
+> EVERYTHING FROM THE REMOTE
+> • Take photos, or start and stop video recording
+> • Switch between the front and back cameras
+> • Cycle the flash and set a 3 or 10 second countdown that shows on the camera's screen
+> • See a live view of what the camera sees when both devices share a Wi-Fi network
+> 
+> COPIES WHERE YOU WANT THEM
+> Decide whether the camera keeps a copy in Photos and whether the remote receives photos and videos. On a shared Wi-Fi network full-resolution originals arrive on the remote within seconds. Over Bluetooth alone the remote still controls everything, and waiting files can be downloaded on request.
+> 
+> PRIVATE BY DESIGN
+> Everything travels directly between your two devices over Bluetooth and, on a shared network, Wi-Fi. There is no server, no account, no ads and no analytics, and Shot Caller collects no data.
+> 
+> Shot Caller is free and open source.
+
+**What's new (2.0):**
+
+> Shot Caller is a complete rewrite of Open Source Selfie Stick. Pair with a four-digit code, control photos and video from the remote, see a live view when both devices share a Wi-Fi network, and get full-resolution copies delivered straight to the remote. Everything stays between your two devices.
+
+The public pages are GitHub Pages built from `docs/` (`docs/_config.yml`, `docs/index.md`; `SUPPORT.md` and
+`PRIVACY.md` render as `.html`). The App Store build is made by `Tools/app-store-archive.sh` and uploaded with
+the same export options switched to `destination: upload` (build 202610151616 on 2026-10-15, from commit c2f9da7).
 
 ## Notes for App Review
 
