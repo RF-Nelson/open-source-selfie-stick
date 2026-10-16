@@ -48,6 +48,10 @@ struct RootView: View {
             }
             .task {
                 photoAccess.refresh()
+                #if DEBUG
+                // Simulator screenshots: straight into the staged role, no setup sheet.
+                if let mode = ScreenshotMode.current { role = mode.scene.role }
+                #endif
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { photoAccess.refresh() }

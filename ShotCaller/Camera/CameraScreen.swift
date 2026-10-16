@@ -14,7 +14,11 @@ final class CameraStack {
     init() {
         transport = TransportFactory.make(displayName: DeviceIdentity.displayName)
         #if targetEnvironment(simulator)
+        #if DEBUG
+        let device: any CameraDevice = ScreenshotMode.current?.device ?? SimulatedCameraDevice()
+        #else
         let device: any CameraDevice = SimulatedCameraDevice()
+        #endif
         preview = nil
         capture = nil
         #else
@@ -71,6 +75,7 @@ struct CameraScreen: View {
             stack.model.keepsCopies = UserDefaults.standard.object(forKey: SessionPreferences.keepsCopies) as? Bool ?? true
             await stack.model.start()
             #if DEBUG
+            if let mode = ScreenshotMode.current { mode.run(camera: stack.model) }
             if !stack.model.usesCodePairing {
                 pairingState.start(transport: stack.transport, automaticallyFinishPairing: true)
             }
@@ -166,7 +171,15 @@ struct CameraScreen: View {
                             }
                     )
             } else {
+                #if DEBUG
+                if let image = ScreenshotMode.current?.viewfinder {
+                    StagedViewfinder(image: image)
+                } else {
+                    SimulatedPreview()
+                }
+                #else
                 SimulatedPreview()
+                #endif
             }
 
             if case .unavailable(let reason) = model.availability {

@@ -115,9 +115,12 @@ categories, description, keywords, promotional text, what's new, copyright, supp
 (GitHub Pages, live), the review note (two devices, six steps), review contact carried over with no demo
 account, the age-rating questionnaire re-answered (4+), App Privacy published as Data Not Collected, and
 the App Store build 202610151616 (commit c2f9da7, `Tools/app-store-archive.sh` then an upload export)
-attached. **Still missing: screenshots** — 6.9" iPhone (1320×2868, native on the iPhone 17 Pro Max) and
-13" iPad (2064×2752; the 11" iPad's 1668×2388 captures go through a compositor frame). No demo video
-(Rich's call). **Do not submit yet:** two other apps are WAITING_FOR_REVIEW (Goatacorn Goes to Japan!,
+attached. **Screenshots uploaded** later the same evening: `Tools/screenshots.sh <photo>` produced them in the
+Simulator (Debug-only `ScreenshotMode`, see APP_STORE_RELEASE.md step 4) with Rich's cat photos; four 6.9"
+iPhone frames (1320×2868: live view, countdown, camera with the sharing pill, saved photo) and two 13" iPad
+landscape frames (2752×2064: live view, settings sheet) are on the 2.0 en-US localization, read back COMPLETE,
+and the six 2016 sets of the old app that 2.0 had inherited were emptied. No demo video (Rich's call).
+Nothing is left to fill in on the version. **Do not submit yet:** two other apps are WAITING_FOR_REVIEW (Goatacorn Goes to Japan!,
 Goatacorn 2.0); the ship-app-store cadence rule is one app in review at a time, and `asc.mjs submit`
 refuses while the queue is busy.
 

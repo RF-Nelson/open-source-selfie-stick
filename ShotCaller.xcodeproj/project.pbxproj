@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		022A639D16F9A51322A73446 /* ScreenshotMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = D73E15FC5FFE20D4241B394A /* ScreenshotMode.swift */; };
 		0CB7877809FD6CD8129FCB99 /* ShotCallerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC00C82C6B672A3D4FDE00C1 /* ShotCallerApp.swift */; };
 		267E41EB52B5CDAA6301AEA8 /* CameraScreen.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB485038A2216C48B2FBE727 /* CameraScreen.swift */; };
 		2916862C1B64918DF02E698D /* WiFiAwarePairingControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FBBC99FEF40338732B6E756 /* WiFiAwarePairingControls.swift */; };
@@ -62,6 +63,7 @@
 		CEF747C43D2765897ECA2EE6 /* CaptureDelegates.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureDelegates.swift; sourceTree = "<group>"; };
 		D21BCC60C932E06AFB46C6BA /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		D5B04AF1137CF40F882C5349 /* ImageThumbnailMaker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageThumbnailMaker.swift; sourceTree = "<group>"; };
+		D73E15FC5FFE20D4241B394A /* ScreenshotMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotMode.swift; sourceTree = "<group>"; };
 		D88BF12E4266B0CE666DB169 /* PrivacyHelpView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrivacyHelpView.swift; sourceTree = "<group>"; };
 		FC00C82C6B672A3D4FDE00C1 /* ShotCallerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShotCallerApp.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -145,6 +147,7 @@
 				D88BF12E4266B0CE666DB169 /* PrivacyHelpView.swift */,
 				C83F756137D4702B3A01561D /* RolePickerView.swift */,
 				0BF327D965A97F69C03E9A5F /* RootView.swift */,
+				D73E15FC5FFE20D4241B394A /* ScreenshotMode.swift */,
 				FC00C82C6B672A3D4FDE00C1 /* ShotCallerApp.swift */,
 				7E020FDF155C4152B9412E00 /* TransportFactory.swift */,
 				2DE59108C0DE1803FF4CB798 /* WiFiAwarePairing.swift */,
@@ -270,6 +273,7 @@
 				B5FDAEA876E74F5B3DA38440 /* RemoteScreen.swift in Sources */,
 				3D7B273C2B91CA904500DB20 /* RolePickerView.swift in Sources */,
 				85358E847B1A91AF85A7D9DF /* RootView.swift in Sources */,
+				022A639D16F9A51322A73446 /* ScreenshotMode.swift in Sources */,
 				0CB7877809FD6CD8129FCB99 /* ShotCallerApp.swift in Sources */,
 				C56C4A566B01FAD6280E734B /* SimulatedCameraDevice.swift in Sources */,
 				3C00B330B55312E4E6DE6F64 /* Theme.swift in Sources */,

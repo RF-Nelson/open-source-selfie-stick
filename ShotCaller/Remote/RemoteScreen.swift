@@ -36,11 +36,19 @@ struct RemoteScreen: View {
             }
             model?.start()
             TransportFactory.markStarted()
+            #if DEBUG
+            if let model, let mode = ScreenshotMode.current { mode.run(remote: model) }
+            #endif
         }
         .onDisappear {
             UIApplication.shared.isIdleTimerDisabled = false
             model?.stop()
         }
+        #if DEBUG
+        .onChange(of: ScreenshotMode.current?.wantsSettingsSheet ?? false) { _, wants in
+            if wants { showSettings = true }
+        }
+        #endif
         .onChange(of: scenePhase) { _, phase in
             UIApplication.shared.isIdleTimerDisabled = phase == .active
             // Nobody can be looking while the scene is inactive (app switcher, a system sheet): stop

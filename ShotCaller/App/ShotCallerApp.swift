@@ -11,6 +11,10 @@ struct ShotCallerApp: App {
         // Debug only: if the internal Wi-Fi Aware test mode crashed while starting last time, turn it
         // off before the home screen can offer a role.
         TransportFactory.recoverIfWiFiAwareCrashed()
+        #if DEBUG
+        // Simulator screenshots: stage the session (names, preferences) before any screen reads them.
+        _ = ScreenshotMode.current
+        #endif
     }
 
     var body: some Scene {

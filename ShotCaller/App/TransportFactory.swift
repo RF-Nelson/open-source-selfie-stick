@@ -13,6 +13,8 @@ import ShotCallerCore
 enum TransportFactory {
     static func make(displayName: String) -> any PeerTransport {
         #if DEBUG
+        // Simulator screenshots: both roles in one process over a linked in-memory pair.
+        if let mode = ScreenshotMode.current { return mode.transport(for: mode.scene.role) }
         if #available(iOS 26.0, *), internalWiFiAwareEnabled {
             UserDefaults.standard.set(true, forKey: wifiAwarePendingKey)
             return WiFiAwareTransport(displayName: displayName)
